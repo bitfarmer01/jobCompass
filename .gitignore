@@ -48,6 +48,14 @@ yarn-error.log*
 # vercel
 .vercel
 
+# editor / internal settings
+.vscode/settings.json
+
+# local-only: MCP config (contains secrets), agent copy, session notes
+.mcp.json
+agentscopy(1).md
+memory.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
