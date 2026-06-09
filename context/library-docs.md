@@ -124,6 +124,26 @@ const { error } = await insforge
 
 ---
 
+### Table grants & RLS (read before creating any table)
+
+InsForge follows the PostgREST/Supabase model. When you create a table via `run-raw-sql`:
+
+- It **auto-grants both `anon` and `authenticated` full CRUD** (`ALTER DEFAULT PRIVILEGES` is
+  configured at the role level). The table grants are **not** the security boundary.
+- **RLS is the security gate.** Every table holding user data MUST: `ENABLE ROW LEVEL SECURITY`
+  and have an owner policy — `FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK
+  (user_id = auth.uid())` (use `id = auth.uid()` on the `profiles` table). With RLS on and no
+  `anon` policy, the anon role is default-denied (zero rows) even though it holds table grants.
+- `auth.uid()` returns the authenticated user's id (JWT `sub`). The SDK runs as the
+  `authenticated` role under a user JWT; `run-raw-sql` runs as `project_admin`, which **bypasses
+  RLS** — so RLS behavior can only be verified end-to-end under a real user session, not via MCP.
+- **For user-private tables, additionally `REVOKE` the `anon` grant** as defense-in-depth:
+  `REVOKE SELECT, INSERT, UPDATE, DELETE ON public.<table> FROM anon;` (done for the feature-04
+  tables). Do **not** alter the global default privileges to strip `anon` — that would break any
+  future intentionally-public/anon-readable table.
+
+---
+
 ### Storage
 
 ```typescript
@@ -152,6 +172,15 @@ const url = data.publicUrl;
 - Always use `upsert: true` for base resume uploads — overwrites existing file
 - Always save the public URL back to the DB after upload
 - Never write files to disk — always upload buffer directly to storage
+
+> **⚠️ UNRESOLVED — resumes bucket access model (decide in feature 07/08).**
+> The `resumes` bucket was **deliberately NOT created in feature 04**. `architecture.md`
+> requires "authenticated users only, own files only", but the `getPublicUrl()` snippet
+> above only works on a **public** bucket. Since the path `resumes/{user_id}/resume.pdf`
+> is guessable, a public bucket would expose resume PDFs (PII). Before building the resume
+> upload/generate features, decide: **private bucket + `createSignedUrl()`** (secure, store
+> the path and sign on read) **vs public bucket + `getPublicUrl()`** (matches this snippet,
+> world-readable). Create the bucket via the `create-bucket` MCP tool at that point.
 
 ---
 
