@@ -10,10 +10,10 @@ Always import Inter via `next/font/google` in the root layout.
 
 ```typescript
 import { Inter } from "next/font/google";
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 ```
 
-The `--font-sans` variable is already declared in `@theme` in globals.css. Apply the font variable class to the `<html>` tag in root layout. Never use system fonts as the primary font.
+Apply `inter.variable` to the `<html>` tag. `globals.css` bridges it to `font-sans` via `@theme inline { --font-sans: var(--font-inter) }` — this indirection is required so Tailwind resolves the value at the correct time. Never use system fonts as the primary font.
 
 ---
 

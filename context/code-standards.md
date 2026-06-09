@@ -222,18 +222,28 @@ const insforge = await createInsforgeServer();
 
 All PostHog events must use these exact event names. Never invent new event names without adding them here first.
 
-| Event                | When                                       | Key Properties             |
-| -------------------- | ------------------------------------------ | -------------------------- |
-| `job_search_started` | Find Jobs button clicked                   | userId, jobTitle, location |
-| `job_found`          | Each job discovered and saved              | userId, source, matchScore |
-| `profile_completed`  | User saves complete profile for first time | userId                     |
-| `company_researched` | Company research dossier generated         | userId, jobId, company     |
-
-These four events are the only events in this project. Do not add more without updating this list first.
+| Event                      | When                                             | Key Properties                      |
+| -------------------------- | ------------------------------------------------ | ----------------------------------- |
+| `job_search_started`       | Find Jobs button clicked                         | userId, jobTitle, location          |
+| `job_found`                | Each job discovered and saved                    | userId, source, matchScore          |
+| `profile_completed`        | User saves complete profile for first time       | userId                              |
+| `company_researched`       | Company research dossier generated               | userId, jobId, company              |
+| `login_completed`          | OAuth exchange succeeds and userId is available  | userId                              |
+| `resume_uploaded`          | User selects and uploads a PDF resume            | userId                              |
+| `resume_extracted`         | AI extraction from uploaded resume completes     | userId, success, fields_extracted   |
+| `resume_generated`         | AI PDF generation from profile completes         | userId, success                     |
+| `company_research_started` | User clicks Research Company button              | userId, jobId, company              |
+| `job_applied`              | User clicks Apply Now (external link)            | userId, jobId, company, match_score |
 
 `job_found` powers the Jobs Found Over Time and Match Score Distribution dashboard charts.
 `company_researched` powers the Company Research Activity dashboard chart.
 Always fire these with correct properties.
+
+Server-side events (`resume_extracted`, `resume_generated`) must use `createPostHogServer()` from
+`@/lib/posthog-server` and call `await posthog.shutdown()` before the route handler returns —
+events are silently dropped without it.
+Client-side events use `import { posthog } from "@/lib/posthog-client"`.
+Every event must include `userId` when the value is available.
 
 ---
 
@@ -305,7 +315,7 @@ Never install a new package without a clear reason. Before installing anything c
 
 Approved dependencies for this project:
 
-- `@insforge/ssr` — InsForge client
+- `@insforge/sdk` — InsForge client (SSR helpers under the `@insforge/sdk/ssr` subpath)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
 - `openai` — GPT-4o API

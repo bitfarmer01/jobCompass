@@ -35,9 +35,9 @@
 ├── app/
 │   ├── layout.tsx                          → Root layout, PostHog provider
 │   ├── page.tsx                            → Homepage
-│   ├── (auth)/
-│   │   ├── login/
-│   │   │   └── page.tsx                   → Login page
+│   ├── login/
+│   │   └── page.tsx                        → Login page
+│   ├── auth/
 │   │   └── callback/
 │   │       └── page.tsx                   → OAuth callback handler
 │   ├── dashboard/
@@ -49,6 +49,9 @@
 │   │   └── [id]/
 │   │       └── page.tsx                   → Individual job details page
 │   └── api/
+│       ├── auth/
+│       │   ├── exchange/route.ts          → Server-side PKCE code exchange; sets httpOnly cookies
+│       │   └── refresh/route.ts           → Token refresh endpoint (SDK createRefreshAuthRouter)
 │       ├── agent/
 │       │   ├── find/route.ts              → Trigger Adzuna job discovery
 │       │   └── research/route.ts          → Trigger company research agent
@@ -293,46 +296,37 @@ Access: authenticated users only, own files only.
 - Methods: Google OAuth, GitHub OAuth
 - Protected routes: /dashboard, /profile, /find-jobs, /find-jobs/[id]
 - Public routes: /, /login
-- Middleware in middleware.ts checks session on every protected route
+- Proxy in proxy.ts (Next.js 16 renames the `middleware.ts` convention to `proxy.ts`, and the
+  `middleware` export to `proxy`) checks session on every protected route via `updateSession`
+- OAuth uses PKCE: the callback page POSTs the code + verifier to `app/api/auth/exchange`, which
+  exchanges server-to-server and sets `insforge_access_token` + `insforge_refresh_token` httpOnly
+  cookies so the proxy can read them immediately
 - On login → redirect to /dashboard
 
 ---
 
 ## InsForge Client Pattern
 
-Two separate InsForge instances — never mix them:
+Two separate InsForge instances — never mix them. The package is `@insforge/sdk`
+(installed as `@insforge/sdk@^1.3.1`); the SSR helpers live under the `@insforge/sdk/ssr`
+subpath. Both clients read `NEXT_PUBLIC_INSFORGE_URL` and `NEXT_PUBLIC_INSFORGE_ANON_KEY`
+from the environment automatically — they are not passed as arguments.
 
 ```typescript
 // lib/insforge-client.ts
 // Browser-side — used in client components for auth state
-import { createBrowserClient } from "@insforge/ssr";
-export const insforge = createBrowserClient(
-  process.env.NEXT_PUBLIC_INSFORGE_URL!,
-  process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-);
+import { createBrowserClient } from "@insforge/sdk/ssr";
+export const insforge = createBrowserClient();
 
 // lib/insforge-server.ts
 // Server-side — used in API routes, Server Actions, agent code
-import { createServerClient } from "@insforge/ssr";
+import { createServerClient } from "@insforge/sdk/ssr";
 import { cookies } from "next/headers";
 
-export const createInsforgeServer = async () => {
+export async function createInsforgeServer() {
   const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_INSFORGE_URL!,
-    process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
-};
+  return createServerClient({ cookies: cookieStore });
+}
 ```
 
 ---
