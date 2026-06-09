@@ -7,6 +7,20 @@ AI has no memory between sessions. Every new session starts blank. This skill fi
 
 Run it at the end of a session to save. Run it at the start of a new session to restore. That is all it does — but done consistently, it means nothing ever gets lost.
 
+## Security Boundary
+
+This skill must never persist secrets. If any sensitive value appears in the conversation or context, do not copy it to `memory.md`.
+
+Sensitive data includes (non-exhaustive):
+
+- API keys, access tokens, refresh tokens, session tokens
+- Passwords, passphrases, one-time codes, private keys, certificates
+- Cookies, auth headers, connection strings, webhook secrets
+- Any credential-like value or secret-looking string
+
+If a detail is useful but sensitive, store a redacted placeholder instead (for example: `[REDACTED_API_KEY]`).
+If unsure whether something is sensitive, treat it as sensitive and omit or redact it.
+
 ## How to Invoke
 
 **To save at end of session:**
@@ -31,7 +45,7 @@ When the developer runs `/remember save`:
 
 ### What to capture
 
-Read the entire session. Extract only what a developer would genuinely need to continue this work in a completely fresh context. Not a transcript. Not a summary of everything that happened. The essential state.
+Review the current conversation to extract only what a developer would genuinely need to continue this work in a completely fresh context. Do not include sensitive data such as credentials, API keys, or tokens in the saved memory. Not a transcript. Not a summary of everything that happened. The essential state.
 
 Think like someone handing off a project to a colleague who is equally skilled but knows nothing about what happened today. What would they need to know to continue without losing anything?
 
@@ -55,10 +69,38 @@ Capture:
 - Decisions already documented in context files
 - Anything that can be inferred by reading the codebase
 - The process of how something was built — only what was built and what was decided
+- Any secrets or credential-like values (tokens, keys, passwords, cookies, auth headers, connection strings)
+
+### Safety check before writing
+
+Before writing `memory.md`, run a final pass over the content to ensure no sensitive value is present.
+
+- If sensitive content is found, remove or redact it before writing.
+- Keep only the minimal non-sensitive context needed to continue next session.
 
 ### Where to save
 
-Write the memory to `memory.md` in the project root. Overwrite it completely — do not append. This file always contains only the most recent session state.
+Write the memory to `memory.md` in the project root. This file always contains only the most recent session state.
+
+If `memory.md` already exists, show the developer a brief summary of what is currently saved and ask for confirmation before overwriting:
+
+Step 1 — Read `memory.md`, provide the one-line summary, and stop to wait for developer input:
+
+```
+memory.md already exists from a previous session.
+Current memory covers: [one-line summary of existing content].
+
+Overwrite with this session's memory? (yes / no)
+```
+
+Step 2 — After the developer responds:
+
+- If they say **yes**, write the new `memory.md`.
+- If they say **no**, do not write anything and reply:
+
+```
+No changes made. memory.md is unchanged.
+```
 
 ### Format
 
@@ -119,7 +161,19 @@ To save memory at the end of a session, run /remember save.
 
 ### Step 2 — Read everything available
 
-Read `memory.md` first. Then read any other context files that exist — CLAUDE.md, context files, whatever is available. Build the most complete picture possible of where this project is and where it is going.
+Read `memory.md` first. Then check for these specific context files if they exist and read only those:
+
+- `CLAUDE.md`, `.claude/context.md` — Claude Code
+- `.github/copilot-instructions.md` — GitHub Copilot
+- `.cursorrules`, `.cursor/rules/` — Cursor
+- `.windsurfrules` — Windsurf
+- `AGENTS.md` — Codex
+- `.clinerules` — Cline
+- `context.md` — generic fallback
+
+Do not scan or read other files beyond this list. Build the most complete picture possible from what is available.
+
+When restoring, never repeat or surface raw secrets from any source. If a secret appears in restored context, summarise it in redacted form only.
 
 ### Step 3 — Confirm what was restored
 

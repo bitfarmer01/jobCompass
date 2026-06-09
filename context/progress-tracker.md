@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 1 — Foundation
-**Last completed:** 03 PostHog Initialization
-**Next:** 04 Database Schema
+**Phase:** Phase 1 — Foundation → Phase 2 — Profile Page
+**Last completed:** 04 Database Schema
+**Next:** 05 Profile Page — Full UI
 
 ---
 
@@ -19,7 +19,7 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 01 Homepage
 - [x] 02 Auth
 - [x] 03 PostHog Initialization
-- [ ] 04 Database Schema
+- [x] 04 Database Schema
 
 ### Phase 2 — Profile Page
 
@@ -47,6 +47,20 @@ Update this file after every completed feature. Any AI agent reading this should
 - [ ] 17 Analytics Charts — PostHog Data
 
 ---
+
+### Feature 04 — Database Schema (2026-06-09)
+
+Four tables + RLS created via InsForge MCP `run-raw-sql` (no app code). Matches `architecture.md` schema exactly.
+
+- **Tables:** `profiles` (24 cols, PK `id` = `auth.users(id)` ON DELETE CASCADE — the auth uid *is* the profile id, no separate user_id), `agent_runs` (8), `jobs` (23), `agent_logs` (7). Column counts verified against `architecture.md`.
+- **RLS is the security gate** (per build-plan 04): real Postgres RLS enabled on all four; one `FOR ALL TO authenticated` owner policy each (`USING`/`WITH CHECK` = `auth.uid()` matches the row's user). InsForge exposes `auth.uid()` (= JWT `sub`) — Supabase-style. App code still filters by `user_id` (defense in depth).
+- **Grants — read this before creating future tables:** InsForge auto-grants **both** `anon` and `authenticated` full CRUD on every new table (its `ALTER DEFAULT PRIVILEGES` at the role level — the standard PostgREST model). Row security comes from RLS, not the grants (`anon` has no policy → default-deny → zero rows). For these four user-private tables we additionally **`REVOKE`d `anon`** as defense-in-depth, so only `authenticated` is granted. Caveat: any future table will again receive the `anon` default grant — for user-private tables, revoke `anon` per-table (or rely on RLS default-deny). Do **not** strip `anon` from the global default privileges — that would break any future intentionally-public table. See `library-docs.md` InsForge section.
+- **CHECK constraints** only on invariant-critical enums: `jobs.source IN ('search','url')`, `agent_runs.status IN ('running','completed','failed')`, `agent_logs.level IN ('info','success','warning','error')`. Descriptive enums (experience_level, remote_preference, job_type, etc.) left as free text.
+- **FKs:** `user_id → profiles(id)` ON DELETE CASCADE (account delete cascades to all user data); `jobs.run_id`, `agent_logs.run_id`, `agent_logs.job_id` ON DELETE SET NULL (url-sourced jobs already allow null run_id; logs survive run/job purge).
+- **Defaults:** `gen_random_uuid()` PKs (except `profiles.id`), `now()` timestamps, `is_complete=false`, `jobs_found=0`, arrays `'{}'`, `work_experience`/`education` jsonb `'[]'`. `profiles.updated_at` auto-maintained by a `BEFORE UPDATE` trigger (`public.set_updated_at`).
+- **Indexes** on every FK/user_id column (`*_user_id_idx`, `jobs_run_id_idx`, `agent_logs_run_id_idx`) for user-scoped queries.
+- **Storage `resumes` bucket DEFERRED to feature 07/08** — `architecture.md` ("authenticated, own files only") conflicts with `library-docs.md`'s `getPublicUrl()` pattern (needs a public bucket; the `resumes/{user_id}/resume.pdf` path is guessable → a public bucket leaks PII). Private-bucket + `createSignedUrl()` vs public is decided when the resume read pattern actually exists. See note in `library-docs.md`.
+- **`run-raw-sql` rejects `BEGIN/COMMIT`** (transaction control not allowed) — it wraps the batch itself; send plain multi-statement DDL.
 
 ## Decisions Made During Build
 
