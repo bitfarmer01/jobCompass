@@ -258,6 +258,7 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
 | `OPENAI_API_KEY`                | agent/ functions       |
+| `NIM_API_KEY`                   | lib/nim-client.ts      |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_KEY`       | lib/posthog-client.ts  |
@@ -318,7 +319,7 @@ Approved dependencies for this project:
 - `@insforge/sdk` — InsForge client (SSR helpers under the `@insforge/sdk/ssr` subpath)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
-- `openai` — GPT-4o API
+- `openai` — GPT-4o API and NVIDIA NIM (via custom baseURL in lib/nim-client.ts)
 - `posthog-js` — PostHog browser client
 - `posthog-node` — PostHog server client
 - `@react-pdf/renderer` — Resume PDF generation
@@ -327,5 +328,14 @@ Approved dependencies for this project:
 - `lucide-react` — Icons
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives
+- `class-variance-authority`, `clsx`, `tailwind-merge` — shadcn primitive styling + `cn` helper
+- `@radix-ui/react-slot`, `@radix-ui/react-select`, `@radix-ui/react-checkbox`, `@radix-ui/react-label` — Radix headless primitives behind the shadcn components
 
 Do not install any other packages without updating this list first.
+
+**shadcn setup note (feature 05):** shadcn was **not** initialised via `npx shadcn init` — that would
+rewrite `globals.css` and risk clobbering the `@theme` tokens. Instead `components.json` + `lib/utils.ts`
+(`cn`) were authored manually and each primitive in `components/ui/` was hand-written and styled directly
+to project tokens (`border-border`, `ring-accent`, `bg-surface`, `text-text-primary`,
+`placeholder:text-text-muted`). When adding a new shadcn primitive, hand-author it to tokens the same
+way — never let the CLI touch `globals.css` or introduce default neutral palette classes.

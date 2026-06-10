@@ -56,6 +56,7 @@
 │       │   ├── find/route.ts              → Trigger Adzuna job discovery
 │       │   └── research/route.ts          → Trigger company research agent
 │       ├── resume/
+│       │   ├── route.ts                    → GET: stream the authed user's own resume PDF (private bucket)
 │       │   ├── generate/route.ts          → Generate base resume PDF from profile
 │       │   └── extract/route.ts           → Extract profile data from uploaded resume PDF
 ├── agent/
@@ -286,7 +287,11 @@ URL saved to profiles table
 | ------- | ---------------------------- | ------------------------- |
 | resumes | resumes/{user_id}/resume.pdf | Current active resume PDF |
 
-Access: authenticated users only, own files only.
+Access: authenticated users only, own files only. Implemented (feature 06) as a
+**private** bucket (`isPublic: false`). No public URL / no signed URLs in the SDK —
+the PDF is served through the authenticated `GET /api/resume` route, which derives the
+storage path from the session. `profiles.resume_pdf_url` stores the storage **path**
+(`{user_id}/resume.pdf`), not a URL.
 
 ---
 

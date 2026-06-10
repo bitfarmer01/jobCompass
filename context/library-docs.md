@@ -146,22 +146,34 @@ InsForge follows the PostgREST/Supabase model. When you create a table via `run-
 
 ### Storage
 
+**⚠️ The installed SDK is v1.3.1 — the real storage API differs from older docs.**
+Verified against `node_modules/@insforge/sdk/dist/client-*.d.ts`:
+
 ```typescript
-// Upload file
+// upload(path, file) — takes File | Blob ONLY. No options object,
+// no contentType, NO upsert flag.
 const { data, error } = await insforge.storage
   .from("resumes")
-  .upload(`${userId}/resume.pdf`, fileBuffer, {
-    contentType: "application/pdf",
-    upsert: true, // overwrites existing file
-  });
+  .upload(`${userId}/resume.pdf`, file); // file: File | Blob
+// data → { bucket, key, size, mimeType, uploadedAt, url }
 
-// Get public URL
-const { data } = insforge.storage
+// getPublicUrl(path) returns the string DIRECTLY (not { data: { publicUrl } }).
+const url: string = insforge.storage.from("resumes").getPublicUrl(path);
+
+// download(path) — server-side fetch of the bytes (use this to serve a
+// PRIVATE bucket through an authenticated route instead of a public URL).
+const { data: blob, error } = await insforge.storage
   .from("resumes")
-  .getPublicUrl(`${userId}/resume.pdf`);
+  .download(path); // data: Blob | null
 
-const url = data.publicUrl;
+// remove(path) — delete. There is NO upsert on upload, so to overwrite a
+// fixed path you remove() then upload() (or use uploadAuto for unique keys).
+await insforge.storage.from("resumes").remove(path);
 ```
+
+**There is NO `createSignedUrl()` in v1.3.1.** A private bucket therefore can't be
+read via a signed URL — serve it through an authenticated API route that calls
+`download()` server-side, or use a public bucket + `getPublicUrl()` (world-readable).
 
 **Storage paths:**
 
@@ -169,18 +181,23 @@ const url = data.publicUrl;
 
 **Rules:**
 
-- Always use `upsert: true` for base resume uploads — overwrites existing file
-- Always save the public URL back to the DB after upload
-- Never write files to disk — always upload buffer directly to storage
+- No `upsert` option — to replace the base resume, `remove()` the path then `upload()`
+- `upload()` accepts only `File | Blob` — a server-generated PDF Buffer must be wrapped (`new Blob([buffer], { type: "application/pdf" })`)
+- Save the returned URL/path back to the DB after upload
+- Never write files to disk — always upload the Blob directly to storage
 
-> **⚠️ UNRESOLVED — resumes bucket access model (decide in feature 07/08).**
-> The `resumes` bucket was **deliberately NOT created in feature 04**. `architecture.md`
-> requires "authenticated users only, own files only", but the `getPublicUrl()` snippet
-> above only works on a **public** bucket. Since the path `resumes/{user_id}/resume.pdf`
-> is guessable, a public bucket would expose resume PDFs (PII). Before building the resume
-> upload/generate features, decide: **private bucket + `createSignedUrl()`** (secure, store
-> the path and sign on read) **vs public bucket + `getPublicUrl()`** (matches this snippet,
-> world-readable). Create the bucket via the `create-bucket` MCP tool at that point.
+> **✅ RESOLVED (feature 06) — resumes bucket is PRIVATE.**
+> Created via MCP `create-bucket` with `isPublic: false`. Because the path
+> `resumes/{user_id}/resume.pdf` is guessable and the SDK has **no `createSignedUrl()`**,
+> a public bucket was rejected (PII leak). Instead:
+> - **Write:** `uploadResume(formData)` in `actions/profile.ts` — validates PDF (≤5 MB),
+>   `remove()`s then `upload()`s to `{userId}/resume.pdf` (no `upsert` in SDK), and saves the
+>   storage **path** (not a URL) to `profiles.resume_pdf_url`.
+> - **Read:** the authenticated **`GET /api/resume`** route derives the path from the session
+>   and streams `storage.download()` as `application/pdf` — a user can only ever fetch their
+>   own file. There is no public URL.
+> - Features 07 (extract) and 08 (generate) read/write the same `{userId}/resume.pdf` path
+>   server-side via `download()` / `remove()`+`upload()`.
 
 ---
 
@@ -519,6 +536,70 @@ const response = await openai.chat.completions.create({
 - If browser research returns empty — still run synthesis with job + profile only
 - yourEdge, gapsToAddress, and smartQuestions are the most valuable fields — never skip them
 
+## NVIDIA NIM
+
+Used for AI extraction tasks (feature 07+). Same `openai` npm package, different `baseURL`.
+
+### Client
+
+```typescript
+// lib/nim-client.ts
+import OpenAI from "openai";
+
+export const nim = new OpenAI({
+  apiKey: process.env.NIM_API_KEY!,
+  baseURL: "https://integrate.api.nvidia.com/v1",
+});
+```
+
+### Streaming + Reasoning Model
+
+The Nemotron 3 Ultra model returns two streams: `delta.reasoning_content` (internal chain-of-thought) and `delta.content` (final output). Collect only `delta.content`.
+
+```typescript
+import OpenAI from "openai";
+import { nim } from "@/lib/nim-client";
+
+// NIM-specific params not in the OpenAI SDK type
+type NIMStreamParams = OpenAI.Chat.ChatCompletionCreateParamsStreaming & {
+  reasoning_budget?: number;
+  chat_template_kwargs?: Record<string, unknown>;
+};
+
+const params: NIMStreamParams = {
+  model: "nvidia/nemotron-3-ultra-550b-a55b",
+  messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+  temperature: 1,
+  top_p: 0.95,
+  max_tokens: 16384,
+  reasoning_budget: 16384,
+  chat_template_kwargs: { enable_thinking: true },
+  stream: true,
+};
+
+// Cast required: NIM params extend the standard type; extra fields pass through in the body
+const stream = await nim.chat.completions.create(
+  params as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+);
+
+let content = "";
+for await (const chunk of stream) {
+  content += chunk.choices[0]?.delta?.content ?? "";
+}
+// content now contains the final model output (no reasoning preamble)
+```
+
+**Rules:**
+
+- Always use `stream: true` — the model requires it
+- Collect only `delta.content`, not `delta.reasoning_content`
+- Instruct JSON via system prompt — do not use `response_format: { type: "json_object" }`
+- Always strip markdown code fences defensively before `JSON.parse`
+- NIM client lives in `lib/nim-client.ts` — always import from there
+- Model constant is `"nvidia/nemotron-3-ultra-550b-a55b"` — defined in the agent file that uses it
+
+---
+
 ## OpenAI GPT-4o
 
 **Check first:** Check AGENTS.md for an installed OpenAI skill. The skill will have the latest API patterns and model capabilities.
@@ -578,18 +659,26 @@ const result = JSON.parse(response.choices[0].message.content!);
 
 ### Client Setup (Browser)
 
+PostHog is initialised in `instrumentation-client.ts` (the Next.js client instrumentation
+hook — runs once before the app), NOT in a manually-called `initPostHog()`. `lib/posthog-client.ts`
+only re-exports the `posthog-js` singleton so app code can capture events.
+
 ```typescript
-// lib/posthog-client.ts
+// instrumentation-client.ts — owns posthog.init (runs once, client-side)
 import posthog from "posthog-js";
 
-export function initPostHog() {
-  if (typeof window !== "undefined") {
-    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST!,
-      capture_pageview: false, // manual pageview tracking
-    });
-  }
-}
+posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+  api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
+  capture_pageview: "history_change", // automatic SPA pageviews on route change
+  capture_pageleave: true,
+  defaults: "2026-01-30",
+});
+```
+
+```typescript
+// lib/posthog-client.ts — singleton re-export for app code
+import posthog from "posthog-js";
+export { posthog };
 
 // Capture event client-side
 posthog.capture("job_found", {
@@ -664,13 +753,12 @@ const ResumePDF = ({ profile }: { profile: Profile }) => (
 // Generate buffer
 const buffer = await renderToBuffer(<ResumePDF profile={profile} />)
 
-// Upload directly to InsForge Storage
-await insforge.storage
-  .from('resumes')
-  .upload(`${userId}/resume.pdf`, buffer, {
-    contentType: 'application/pdf',
-    upsert: true
-  })
+// Upload directly to InsForge Storage. v1.3.1 upload() takes File | Blob only
+// (no options, no upsert) — wrap the buffer, and remove() first to overwrite.
+// See the InsForge → Storage section for the full corrected API.
+const blob = new Blob([buffer], { type: 'application/pdf' })
+await insforge.storage.from('resumes').remove(`${userId}/resume.pdf`)
+await insforge.storage.from('resumes').upload(`${userId}/resume.pdf`, blob)
 ```
 
 **Supported CSS properties:**
@@ -691,23 +779,19 @@ Only use these — others are silently ignored:
 
 **Check first:** Check AGENTS.md for an installed pdf-parse skill.
 
-### Extract Text from Uploaded Resume
+### Extract Text from Resume
+
+**⚠️ pdf-parse v2 is class-based — NOT a default function.**
 
 ```typescript
-import pdf from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 
-// In API route handling resume upload
-export async function POST(req: NextRequest) {
-  const formData = await req.formData();
-  const file = formData.get("resume") as File;
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  const pdfData = await pdf(buffer);
-  const extractedText = pdfData.text; // raw text content
-
-  // Send to GPT-4o for structured extraction
-}
+// blob from insforge.storage.download() or a File from a request
+const buffer = Buffer.from(await blob.arrayBuffer());
+const parser = new PDFParse({ data: buffer });
+const result = await parser.getText();
+const text = result.text; // full raw text as a single string
+```
 ```
 
 **Rules:**

@@ -37,10 +37,8 @@ After building any component — update this file with the component name, file 
 ### LogoutButton
 **File:** `components/layout/LogoutButton.tsx`
 **Type:** Client Component (`"use client"` — onClick handler, router, posthog)
-**Behavior:** `POST /api/auth/logout` → `posthog.reset()` → `router.push("/")` + `router.refresh()`. Has a `loading` state ("Signing out…").
-**Key classes:**
-- Button (secondary pattern): `flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-md bg-surface border border-border text-text-primary hover:bg-surface-secondary transition-colors disabled:opacity-60 disabled:cursor-not-allowed`
-- Icon: `LogOut` from lucide-react, `w-4 h-4`
+**Behavior:** `POST /api/auth/logout` (server-side revoke + cookie clear) → `posthog.reset()` → `router.push("/")` + `router.refresh()`. Has a `loading` state ("Signing out…").
+**Implementation:** Uses the shadcn `<Button variant="secondary">` primitive (no longer hand-rolled). Icon: `LogOut` from lucide-react, `w-4 h-4`.
 
 ---
 
@@ -153,3 +151,75 @@ After building any component — update this file with the component name, file 
 - CTA block: `rounded-2xl px-12 py-20 flex flex-col items-center text-center gap-5` + inline gradient `135deg accent → accent-deeper`
 - Headline: `font-bold text-accent-foreground max-w-lg` + inline `fontSize: 40, lineHeight: 50px`
 - CTA button: `flex items-center gap-2 px-8 py-3.5 rounded-md text-sm font-medium bg-surface text-accent`
+
+---
+
+## shadcn/ui Primitives (feature 05)
+
+Hand-authored shadcn primitives in `components/ui/`, styled directly to project tokens (NOT shadcn's
+default neutral palette). Use these everywhere instead of raw `<input>`/`<select>` etc. See the shadcn
+setup note in `code-standards.md` before adding a new primitive.
+
+- **Button** (`components/ui/button.tsx`) — `cva` variants: `default` (`bg-accent text-accent-foreground hover:bg-accent-dark`), `secondary` (`bg-surface border border-border hover:bg-surface-secondary`), `ghost`, `outline`. Sizes `default/sm/lg/icon`. Focus ring `ring-accent`. Auto-sizes inner lucide icons to `size-4`.
+- **Input** (`components/ui/input.tsx`) — `h-10 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus-visible:ring-1 focus-visible:ring-accent focus-visible:border-accent`.
+- **Textarea** (`components/ui/textarea.tsx`) — same as Input, `min-h-20`.
+- **Label** (`components/ui/label.tsx`, Radix) — `text-sm font-medium text-text-secondary`.
+- **Select** (`components/ui/select.tsx`, Radix) — Trigger matches Input styling, `data-[placeholder]:text-text-muted`, `ChevronDown` icon `text-text-muted`; Content `bg-surface border border-border rounded-md shadow-md`; Item `focus:bg-surface-secondary`, check indicator `text-accent`.
+- **Checkbox** (`components/ui/checkbox.tsx`, Radix) — `h-4 w-4 rounded-sm border border-border`; checked → `bg-accent border-accent text-accent-foreground` with `Check` icon.
+
+---
+
+## Profile Components (feature 05)
+
+All under `components/profile/`. The page (`app/profile/page.tsx`) is a Server Component that reads the
+real email via `getCurrentUser()` and passes a partially-filled mock `Profile` (`types/index.ts`) into
+the form. Form save is inert until feature 06.
+
+### CompletionIndicator
+**File:** `components/profile/CompletionIndicator.tsx`
+**Type:** Server Component (presentational — receives `percentage` + `missingFields`)
+**Pattern:** "Needs attention" banner card with an SVG completion ring.
+**Key classes:**
+- Card: `w-full bg-surface border border-border rounded-2xl p-6 flex items-center gap-6` + the standard card box-shadow (inline `shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]`)
+- Ring: `<svg>` `-rotate-90`, two `<circle r=30 strokeWidth=6>` — track `stroke-border-light`, progress `stroke-accent` (or `stroke-success` at 100%) via `strokeDasharray`/`strokeDashoffset`. Center `%` overlaid absolute.
+- Missing-field pills: `px-2 py-0.5 rounded-full text-xs font-medium bg-accent-muted text-accent uppercase tracking-wide`
+- Complete state: `CheckCircle2 text-success` + heading.
+
+### TagInput
+**File:** `components/profile/TagInput.tsx`
+**Type:** Client Component (`"use client"` — local draft state)
+**Pattern:** Chip input — text field + Add button (Enter also adds); chips below with remove `X`. Reused for Skills, Industries, Job Titles Seeking, Preferred Locations.
+**Key classes:**
+- Row: `flex gap-2` (Input + secondary Button)
+- Chip: `inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-accent-light text-accent`
+
+### WorkExperienceCard
+**File:** `components/profile/WorkExperienceCard.tsx`
+**Type:** Controlled (no hooks — receives `value`/`onChange`/`onRemove`)
+**Pattern:** One work-experience role (used up to 3×). Company/Title/Start/End in a 2-col grid, "I currently work here" Checkbox (disables End Date), Responsibilities Textarea, `Trash2` remove.
+**Key classes:**
+- Wrapper: `rounded-lg border border-border p-4 flex flex-col gap-4`
+- Field grid: `grid grid-cols-1 sm:grid-cols-2 gap-4`
+- Remove: `text-text-muted hover:text-error`
+
+### ResumeUpload
+**File:** `components/profile/ResumeUpload.tsx`
+**Type:** Client Component (`"use client"` — drag state, hidden file input, `useTransition`)
+**Behavior (feature 06):** On PDF select/drop → validates type → `uploadResume(formData)` Server Action → uploads to the **private** `resumes` bucket. Props: `initialResumePath?: string`. Shows a "Resume on file" row with a **View** link to `GET /api/resume` (the authenticated stream) when a resume exists; "Uploading…" during the transition; inline error banner on failure. "Generate Resume from Profile" button still inert (feature 08).
+**Key classes:**
+- Card: standard surface card (see CompletionIndicator)
+- Current-resume row: `flex items-center justify-between rounded-lg border border-border bg-surface-secondary px-4 py-3`; View link `text-accent hover:text-accent-dark`
+- Drop zone idle: `rounded-lg border border-dashed border-border-muted bg-surface-secondary hover:bg-surface-tertiary px-6 py-10`; dragging: `border-accent bg-accent-muted`
+- Error banner: `rounded-lg border border-error/30 bg-error/10 text-error px-4 py-3 text-sm font-medium`
+- Icons: `UploadCloud`/`FileText`/`Sparkles`/`ExternalLink` from lucide
+
+### ProfileForm
+**File:** `components/profile/ProfileForm.tsx`
+**Type:** Client Component (`"use client"` — owns all form state, live completion calc)
+**Pattern:** Orchestrates the whole page below the heading: CompletionIndicator → ResumeUpload → 5 `Section` cards (Personal, Professional, Work Experience, Education, Job Preferences) → right-aligned Save Profile button (inert, feature 06). Uses local non-exported `Section` (card) and `Field` (Label + control) helpers.
+**Key classes:**
+- Page stack: `flex flex-col gap-6`
+- `Section` card: `w-full bg-surface border border-border rounded-2xl p-6 flex flex-col gap-5` + card box-shadow; title `text-base font-semibold text-text-primary`
+- `Field`: `flex flex-col gap-1.5` (Label above control)
+- Two-column field grid: `grid grid-cols-1 sm:grid-cols-2 gap-4`
+**Page container** (`app/profile/page.tsx`): `w-full max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6` (narrower than the 1440px marketing pages — forms read better centered).
