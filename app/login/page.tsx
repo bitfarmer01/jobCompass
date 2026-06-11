@@ -28,13 +28,18 @@ export default function LoginPage() {
     setLoading(provider);
     setError(null);
     const redirectTo = `${window.location.origin}/auth/callback`;
-    const { error: authError } = await insforge.auth.signInWithOAuth(provider, {
-      redirectTo,
-    });
+    const { data, error: authError } = await insforge.auth.signInWithOAuth(
+      provider,
+      { redirectTo },
+    );
     if (authError) {
       setError("Something went wrong. Please try again.");
       setLoading(null);
+      return;
     }
+    // The SDK redirects the browser to the provider itself; this is a fallback
+    // in case it returns the URL without navigating (e.g. a blocked redirect).
+    if (data?.url) window.location.href = data.url;
   }
 
   return (

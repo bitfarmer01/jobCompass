@@ -106,10 +106,10 @@ Wire profile form to InsForge DB.
 **Logic:**
 
 - Server Action in actions/profile.ts saves all form fields to profiles table
-- Resume PDF uploaded to InsForge Storage at resumes/{user_id}/resume.pdf with upsert: true
-- resume_pdf_url saved to profiles table after upload
-- is_complete set to true when all required fields are filled
-- Completion percentage and missing fields calculated and saved
+- Resume PDF uploaded to InsForge Storage at `resumes/{user_id}/resume.pdf` — **DONE in 06. Bucket access model RESOLVED = PRIVATE.** No `upsert` option in SDK v1.3.1, so `remove()` then `upload()` (File/Blob only). Served via the authenticated `GET /api/resume` route (no public URL; no `createSignedUrl` in the SDK).
+- resume_pdf_url saved to profiles table after upload — stores the storage **path** (`{user_id}/resume.pdf`), not a URL, since the bucket is private.
+- is_complete set to true when all required fields are filled (shared helper `lib/profile-completion.ts`)
+- ~~Completion percentage and missing fields calculated and saved~~ — **calculated (derived), NOT saved.** The `profiles` table has only `is_complete` (no `%`/`missing_fields` columns; schema frozen in 04). % and missing labels are derived on read/client.
 - Form pre-fills with existing data on return visits
 - revalidatePath('/profile') called after save
 

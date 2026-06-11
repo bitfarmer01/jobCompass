@@ -27,6 +27,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
+  // Authenticated content must never be restored from the browser bfcache/router
+  // cache after sign-out — otherwise hitting Back flashes a protected page even
+  // though the session is gone. no-store forces a fresh (proxy-gated) request.
+  if (isProtected) {
+    response.headers.set("Cache-Control", "no-store, must-revalidate");
+  }
+
   return response;
 }
 
