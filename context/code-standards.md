@@ -232,6 +232,7 @@ All PostHog events must use these exact event names. Never invent new event name
 | `resume_uploaded`          | User selects and uploads a PDF resume            | userId                              |
 | `resume_extracted`         | AI extraction from uploaded resume completes     | userId, success, fields_extracted   |
 | `resume_generated`         | AI PDF generation from profile completes         | userId, success                     |
+| `resume_deleted`           | User deletes their resume PDF                    | userId                              |
 | `company_research_started` | User clicks Research Company button              | userId, jobId, company              |
 | `job_applied`              | User clicks Apply Now (external link)            | userId, jobId, company, match_score |
 

@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 2 — Profile Page
-**Last completed:** 07 AI Profile Extraction from Resume
-**Next:** 08 Resume PDF Generation from Profile
+**Phase:** Phase 2 — Profile Page (complete)
+**Last completed:** 08 Resume PDF Generation from Profile
+**Next:** 09 Find Jobs Page — Full UI
 
 ---
 
@@ -26,7 +26,7 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
 - [x] 07 AI Profile Extraction from Resume
-- [ ] 08 Resume PDF Generation from Profile
+- [x] 08 Resume PDF Generation from Profile
 
 ### Phase 3 — Find Jobs Page
 
@@ -62,12 +62,30 @@ Four tables + RLS created via InsForge MCP `run-raw-sql` (no app code). Matches 
 - **Storage `resumes` bucket DEFERRED to feature 07/08** — `architecture.md` ("authenticated, own files only") conflicts with `library-docs.md`'s `getPublicUrl()` pattern (needs a public bucket; the `resumes/{user_id}/resume.pdf` path is guessable → a public bucket leaks PII). Private-bucket + `createSignedUrl()` vs public is decided when the resume read pattern actually exists. See note in `library-docs.md`.
 - **`run-raw-sql` rejects `BEGIN/COMMIT`** (transaction control not allowed) — it wraps the batch itself; send plain multi-statement DDL.
 
+### Feature 08 — Resume PDF Generation from Profile (2026-06-11)
+
+"Generate Resume from Profile" wired end-to-end. Shipped after a /review + /code-review pass — all confirmed findings fixed. `tsc` + eslint clean.
+
+- **`agent/resume-generator.ts`** — `generateResumeContent(profile)` runs on NIM **`nvidia/nvidia-nemotron-nano-9b-v2`** (decision: sufficient writing quality, faster than the 30b alternative). The 9b's chat template ignores `chat_template_kwargs`, so the system prompt is prefixed with **`/no_think`** (verified against the live endpoint); `enable_thinking:false` kept as a cross-model safeguard. Output JSON (`GeneratedResumeContent` in `types/index.ts`) is defensively normalized (trim/filter) so the PDF never renders dangling separators or empty bullets.
+- **`lib/nim-client.ts`** — now owns ALL shared NIM plumbing: `NIMStreamParams` type + `streamNimContent()` (stream-collect + `<think>`/code-fence stripping). Both agents use it; never reimplement in agent files.
+- **`lib/resume-storage.ts`** (new) — `RESUME_BUCKET`, `resumePath(userId)`, and `overwriteResume()` (guarded `remove()` — it THROWS when the file is missing — then `upload()`). Single owner of the "SDK has no upsert" workaround; used by `uploadResume`, the generate route, and referenced constants by `GET /api/resume` + extract route. **The original generate route 500'd for first-time generators because its bare `remove()` threw — fixed here.**
+- **`lib/resume-pdf.tsx`** — `ResumePDF` template + **`renderResumePdfBuffer()`** (element construction + `renderToBuffer` live together so routes stay `.ts`, no JSX-in-try/catch, no double-casts). `formatDateRange` now parses only `YYYY[-MM[-DD]]` and renders anything else verbatim (AI-extracted dates are prompt-enforced only). Hex colors in this file are the sanctioned exception to the no-hex rule (PDF can't read CSS tokens).
+- **`app/api/resume/generate/route.ts`** — POST: auth → profile fetch (422 if missing/no name) → generate → render → `overwriteResume` → update `resume_pdf_url` → `revalidatePath`. Failure paths are honest: upload failure clears `resume_pdf_url` (the old file is already gone — never point at a missing file); DB-update failure returns 500 "please try again" (retry overwrites + repairs); `resume_generated` PostHog event fires with `success:true|false` and can never fail the response (wrapped).
+- **Friendly errors restored** — `extractor.ts` + `resume-generator.ts` log the raw error server-side and return generic user-facing messages (raw provider/parse internals were leaking to the client).
+- **`agent/extractor.ts`** — `max_tokens` 4096 → **8192** (dense multi-page resumes risked mid-JSON truncation if reasoning tokens count against the cap); `reasoning_budget` stays 1024.
+- **`lib/blank-profile.ts`** (new) — single `blankProfile()` constructor; replaces the duplicated `blankProfile` (profile page) + `makeEmptyProfile` (ProfileForm).
+- **ProfileForm** — Clear is now two-step (Cancel / danger-styled Confirm Clear, same pattern as ResumeUpload's delete confirm); Restore Previous returns to the last-saved snapshot.
+- **Also in this branch (beyond §08 scope, accepted):** `deleteResume()` Server Action + delete-with-confirmation UI + `resume_deleted` event (code-standards updated); extractor retune (model → `nemotron-3-nano-omni-30b-a3b-reasoning`, temp 0.2).
+- **Download added** — `GET /api/resume?download=1` serves `Content-Disposition: attachment` (default stays `inline` for View); ResumeUpload's resume row now has View / Download / Delete.
+- **Deps added:** `@react-pdf/renderer@^4.5.1`; `serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@react-pdf/renderer"]` in `next.config.ts`.
+- **Known accepted limitations:** PDF auto-paginates (a maxed-out profile can spill to page 2 — "single-page" not hard-enforced); `profile as Profile` cast in the route skips the page's DB→Profile mapping (verified safe: all ResumePDF/generator accesses are guarded).
+
 ### Feature 07 — AI Profile Extraction from Resume (2026-06-10)
 
 Wired the "Extract from Resume" AI flow. `tsc` + `next build` clean.
 
 - **`lib/nim-client.ts`** — exports an `OpenAI` instance pointed at NVIDIA NIM (`baseURL: "https://integrate.api.nvidia.com/v1"`, `apiKey: NIM_API_KEY`).
-- **`agent/extractor.ts`** — `extractProfileFromResume(pdfText)` streams from `nvidia/nemotron-3-ultra-550b-a55b` with `enable_thinking: true` + `reasoning_budget: 16384`. Collects only `delta.content` (ignores `delta.reasoning_content`). Strips code fences before `JSON.parse`. Returns `{ success, data?: ExtractedProfile }`. Model defined as a module constant.
+- **`agent/extractor.ts`** — `extractProfileFromResume(pdfText)` streams from `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` with `enable_thinking: true` + `reasoning_budget: 1024`. Collects only `delta.content` (ignores `delta.reasoning_content`). Strips code fences before `JSON.parse`. Returns `{ success, data?: ExtractedProfile }`. Model defined as a module constant.
 - **`app/api/resume/extract/route.ts`** — `POST` (no body needed). Auth → `storage.download("{userId}/resume.pdf")` → `pdf-parse` → min-length guard (100 chars) → `extractProfileFromResume` → fires `resume_extracted` PostHog event (server-side, `createPostHogServer()` + `shutdown()`) → returns `{ success, data }`.
 - **`ResumeUpload.tsx`** — added `onExtracted?: (data: ExtractedProfile) => void` prop and "Extract from Resume" button (visible only when `hasResume === true`). Uses plain `fetch` + local `isExtracting` state. Shows success banner on completion.
 - **`ProfileForm.tsx`** — added `handleExtracted` that splits `education[0]` into the separate `education` state and merges the rest into `form` state via spread. Passes it to `<ResumeUpload onExtracted={handleExtracted} />`.
@@ -166,3 +184,4 @@ End-to-end fix of the home → login → logout flow (feature 02 follow-up):
 - All components use named exports (no default exports except page files)
 - Navbar is a Client Component (needs usePathname for active state)
 - All other homepage components are Server Components
+- Resume generation (feature 08) runs on NVIDIA NIM `nvidia/nvidia-nemotron-nano-9b-v2` with a `/no_think` system-prompt prefix — **decided 2026-06-11: the 9b is sufficient for resume-writing quality and faster**; the 30b text model remains the fallback candidate if quality ever disappoints. The extractor stays on `...omni-30b-a3b-reasoning`. See `library-docs.md` → NVIDIA NIM.

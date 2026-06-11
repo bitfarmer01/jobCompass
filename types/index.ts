@@ -53,3 +53,15 @@ export type Profile = {
 export type ExtractedProfile = Partial<
   Omit<Profile, "id" | "email" | "resume_pdf_url" | "is_complete">
 >;
+
+export type GeneratedResumeContent = {
+  summary: string;
+  workExperience: Array<{
+    company: string;
+    jobTitle: string;
+    startDate: string;
+    endDate: string; // empty string when current === true
+    current: boolean;
+    bullets: string[]; // 3–5 polished action-verb bullets
+  }>;
+};

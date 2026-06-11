@@ -1,15 +1,7 @@
-import OpenAI from "openai";
-
-import { nim } from "@/lib/nim-client";
+import { streamNimContent, type NIMStreamParams } from "@/lib/nim-client";
 import type { ExtractedProfile } from "@/types";
 
-const NIM_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
-
-// NIM-specific params extend the OpenAI streaming type with reasoning controls
-type NIMStreamParams = OpenAI.Chat.ChatCompletionCreateParamsStreaming & {
-  reasoning_budget?: number;
-  chat_template_kwargs?: Record<string, unknown>;
-};
+const NIM_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
 const SYSTEM_PROMPT = `You are a precise resume parser. Extract structured profile data from the resume text provided.
 
@@ -62,36 +54,27 @@ export async function extractProfileFromResume(
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: `Resume:\n\n${pdfText}` },
       ],
-      temperature: 1,
+      temperature: 0.2,
       top_p: 0.95,
-      max_tokens: 16384,
-      reasoning_budget: 16384,
+      // 8192 leaves headroom for dense multi-page resumes — at 4096 the JSON
+      // output risked truncation mid-object if reasoning tokens count against
+      // the cap, which surfaces as a parse failure.
+      max_tokens: 8192,
+      reasoning_budget: 1024,
       chat_template_kwargs: { enable_thinking: true },
       stream: true,
     };
 
-    const stream = await nim.chat.completions.create(
-      // NIMStreamParams extends the standard type; cast satisfies overload resolution
-      // while extra fields (reasoning_budget, chat_template_kwargs) pass through in the body
-      params as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-    );
-
-    let content = "";
-    for await (const chunk of stream) {
-      content += chunk.choices[0]?.delta?.content ?? "";
-    }
-
-    const trimmed = content.trim();
-    // Strip <think>…</think> reasoning block that NIM emits before the JSON
-    const withoutThink = trimmed.replace(/^<think>[\s\S]*?<\/think>\s*/i, "").trim();
-    const jsonStr = withoutThink.startsWith("```")
-      ? withoutThink.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "")
-      : withoutThink;
-
-    const data = JSON.parse(jsonStr) as ExtractedProfile;
+    const content = await streamNimContent(params);
+    const data = JSON.parse(content) as ExtractedProfile;
     return { success: true, data };
   } catch (error) {
-    console.error("[agent/extractor]", error);
-    return { success: false, error: "Failed to extract profile from resume." };
+    // Log the raw error server-side; never surface provider/parse internals to the user.
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("[agent/extractor]", msg);
+    return {
+      success: false,
+      error: "Failed to extract profile from resume. Please try again.",
+    };
   }
 }

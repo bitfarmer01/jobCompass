@@ -1,6 +1,7 @@
 import { ProfileForm } from "@/components/profile/ProfileForm";
-import { createInsforgeServer } from "@/lib/insforge-server";
 import { getCurrentUser } from "@/lib/auth";
+import { blankProfile } from "@/lib/blank-profile";
+import { createInsforgeServer } from "@/lib/insforge-server";
 import type { Education, Profile, WorkExperience } from "@/types";
 
 type ProfileRow = Partial<Record<keyof Profile, unknown>>;
@@ -37,33 +38,6 @@ function toEducation(v: unknown): Education[] {
       graduation_year: str(o.graduation_year),
     };
   });
-}
-
-function blankProfile(id: string, email: string): Profile {
-  return {
-    id,
-    full_name: "",
-    email,
-    phone: "",
-    location: "",
-    current_title: "",
-    experience_level: "",
-    years_experience: "",
-    skills: [],
-    industries: [],
-    work_experience: [],
-    education: [],
-    job_titles_seeking: [],
-    remote_preference: "",
-    preferred_locations: [],
-    salary_expectation: "",
-    cover_letter_tone: "",
-    linkedin_url: "",
-    portfolio_url: "",
-    work_authorization: "",
-    resume_pdf_url: "",
-    is_complete: false,
-  };
 }
 
 function mapRowToProfile(row: ProfileRow, id: string, email: string): Profile {
@@ -104,7 +78,7 @@ export default async function ProfilePage() {
   const id = user?.id ?? "";
   const email = user?.email ?? "";
 
-  let profile: Profile = blankProfile(id, email);
+  let profile: Profile = blankProfile({ id, email });
   if (user) {
     const insforge = await createInsforgeServer();
     const { data } = await insforge.database

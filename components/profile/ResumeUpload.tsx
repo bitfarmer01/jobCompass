@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { UploadCloud, FileText, Sparkles, ExternalLink } from "lucide-react";
+import { UploadCloud, FileText, Sparkles, ExternalLink, Download, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { uploadResume } from "@/actions/profile";
+import { uploadResume, deleteResume } from "@/actions/profile";
 import type { ExtractedProfile } from "@/types";
 
 type Props = {
@@ -21,6 +21,26 @@ export function ResumeUpload({ initialResumePath, onExtracted }: Props) {
   const [isPending, startTransition] = useTransition();
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractSuccess, setExtractSuccess] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateSuccess, setGenerateSuccess] = useState(false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
+  const handleDeleteConfirm = () => {
+    setError(null);
+    startTransition(async () => {
+      const res = await deleteResume();
+      if (res.success) {
+        setHasResume(false);
+        setFileName(null);
+        setIsConfirmingDelete(false);
+        setExtractSuccess(false);
+        setGenerateSuccess(false);
+      } else {
+        setError(res.error ?? "Failed to delete resume.");
+        setIsConfirmingDelete(false);
+      }
+    });
+  };
 
   const pick = () => inputRef.current?.click();
 
@@ -58,6 +78,36 @@ export function ResumeUpload({ initialResumePath, onExtracted }: Props) {
     }
   };
 
+  const handleGenerate = async () => {
+    setError(null);
+    setGenerateSuccess(false);
+    setIsGenerating(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const res = await fetch("/api/resume/generate", {
+        method: "POST",
+        signal: controller.signal,
+      });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (json.success) {
+        setHasResume(true);
+        setGenerateSuccess(true);
+      } else {
+        setError(json.error ?? "Generation failed. Please try again.");
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error && err.name === "AbortError"
+          ? "Generation timed out. Please try again."
+          : "Generation failed. Please try again.",
+      );
+    } finally {
+      clearTimeout(timeoutId);
+      setIsGenerating(false);
+    }
+  };
+
   const handleFile = (file: File) => {
     setError(null);
     if (file.type !== "application/pdf") {
@@ -81,7 +131,7 @@ export function ResumeUpload({ initialResumePath, onExtracted }: Props) {
     <div className="w-full bg-surface border border-border rounded-2xl p-6 flex flex-col gap-4 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
       <h2 className="text-base font-semibold text-text-primary">Resume</h2>
 
-      {hasResume && (
+      {hasResume && !isConfirmingDelete && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-secondary px-4 py-3">
           <div className="flex items-center gap-2 min-w-0">
             <FileText className="w-4 h-4 text-accent flex-shrink-0" />
@@ -89,15 +139,60 @@ export function ResumeUpload({ initialResumePath, onExtracted }: Props) {
               {fileName ?? "Resume on file"}
             </span>
           </div>
-          <a
-            href="/api/resume"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-sm font-medium text-accent hover:text-accent-dark flex-shrink-0"
-          >
-            <ExternalLink className="w-4 h-4" />
-            View
-          </a>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <a
+              href="/api/resume"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-sm font-medium text-accent hover:text-accent-dark"
+            >
+              <ExternalLink className="w-4 h-4" />
+              View
+            </a>
+            <a
+              href="/api/resume?download=1"
+              className="flex items-center gap-1.5 text-sm font-medium text-accent hover:text-accent-dark"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </a>
+            <button
+              type="button"
+              onClick={() => setIsConfirmingDelete(true)}
+              disabled={isPending || isExtracting || isGenerating}
+              className="flex items-center gap-1.5 text-sm font-medium text-error hover:text-error/80 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {hasResume && isConfirmingDelete && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-error/30 bg-error/10 px-4 py-3">
+          <span className="text-sm font-medium text-text-primary">
+            Delete resume?
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsConfirmingDelete(false)}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleDeleteConfirm}
+              disabled={isPending}
+              className="text-error border-error/30 hover:bg-error/10"
+            >
+              {isPending ? "Deleting…" : "Confirm"}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -153,12 +248,18 @@ export function ResumeUpload({ initialResumePath, onExtracted }: Props) {
         </div>
       )}
 
+      {generateSuccess && (
+        <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm font-medium text-success">
+          Resume generated — View to preview or Download to save it.
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-3">
         <Button
           type="button"
           variant="secondary"
           onClick={pick}
-          disabled={isPending || isExtracting}
+          disabled={isPending || isExtracting || isGenerating}
         >
           <FileText className="w-4 h-4" />
           Select Resume
@@ -168,15 +269,20 @@ export function ResumeUpload({ initialResumePath, onExtracted }: Props) {
             type="button"
             variant="secondary"
             onClick={handleExtract}
-            disabled={isPending || isExtracting}
+            disabled={isPending || isExtracting || isGenerating}
           >
             <Sparkles className="w-4 h-4" />
             {isExtracting ? "Extracting…" : "Extract from Resume"}
           </Button>
         )}
-        <Button type="button" variant="secondary" disabled>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleGenerate}
+          disabled={isPending || isExtracting || isGenerating}
+        >
           <Sparkles className="w-4 h-4" />
-          Generate Resume from Profile
+          {isGenerating ? "Generating…" : "Generate Resume from Profile"}
         </Button>
       </div>
     </div>

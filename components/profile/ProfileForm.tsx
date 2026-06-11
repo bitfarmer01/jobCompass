@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
-import { Plus, Save } from "lucide-react";
+import { Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import { TagInput } from "@/components/profile/TagInput";
 import { WorkExperienceCard } from "@/components/profile/WorkExperienceCard";
 import { ResumeUpload } from "@/components/profile/ResumeUpload";
 import { saveProfile, type ProfileFormData } from "@/actions/profile";
+import { blankProfile } from "@/lib/blank-profile";
 import { getProfileCompletion } from "@/lib/profile-completion";
 import type {
   Education,
@@ -117,7 +118,13 @@ export function ProfileForm({ profile }: Props) {
   const [education, setEducation] = useState<Education>(
     profile.education[0] ?? EMPTY_EDUCATION,
   );
+  // Snapshot of last-saved (or initial) state — restored on "Restore Previous"
+  const [savedProfile, setSavedProfile] = useState<Profile>(profile);
+  const [savedEducation, setSavedEducation] = useState<Education>(
+    profile.education[0] ?? EMPTY_EDUCATION,
+  );
   const [isPending, startTransition] = useTransition();
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const [banner, setBanner] = useState<{
     type: "success" | "error";
     msg: string;
@@ -176,6 +183,20 @@ export function ProfileForm({ profile }: Props) {
     }
   };
 
+  const handleClear = () => {
+    setForm(blankProfile({ id: form.id, email: form.email, resume_pdf_url: form.resume_pdf_url }));
+    setEducation(EMPTY_EDUCATION);
+    setBanner(null);
+    setIsConfirmingClear(false);
+  };
+
+  const handleRestore = () => {
+    setForm({ ...savedProfile });
+    setEducation({ ...savedEducation });
+    setBanner(null);
+    setIsConfirmingClear(false);
+  };
+
   const handleSave = () => {
     setBanner(null);
     startTransition(async () => {
@@ -200,6 +221,11 @@ export function ProfileForm({ profile }: Props) {
         work_authorization: form.work_authorization,
       };
       const res = await saveProfile(payload);
+      if (res.success) {
+        // Advance the "previous" snapshot so Restore returns to this save
+        setSavedProfile({ ...form });
+        setSavedEducation({ ...education });
+      }
       setBanner(
         res.success
           ? { type: "success", msg: "Profile saved." }
@@ -513,7 +539,50 @@ export function ProfileForm({ profile }: Props) {
             {banner.msg}
           </div>
         )}
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            {isConfirmingClear ? (
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setIsConfirmingClear(false)}
+                  disabled={isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleClear}
+                  disabled={isPending}
+                  className="text-error border-error/30 hover:bg-error/10"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Confirm Clear
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsConfirmingClear(true)}
+                disabled={isPending}
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleRestore}
+              disabled={isPending}
+            >
+              <RotateCcw className="w-4 h-4" />
+              Restore Previous
+            </Button>
+          </div>
           <Button type="button" onClick={handleSave} disabled={isPending}>
             <Save className="w-4 h-4" />
             {isPending ? "Saving…" : "Save Profile"}

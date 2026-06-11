@@ -4,6 +4,7 @@ import { PDFParse } from "pdf-parse";
 import { extractProfileFromResume } from "@/agent/extractor";
 import { createInsforgeServer } from "@/lib/insforge-server";
 import { createPostHogServer } from "@/lib/posthog-server";
+import { RESUME_BUCKET, resumePath } from "@/lib/resume-storage";
 
 const MIN_TEXT_LENGTH = 100;
 
@@ -22,8 +23,8 @@ export async function POST() {
     }
 
     const { data: blob, error: downloadError } = await insforge.storage
-      .from("resumes")
-      .download(`${user.id}/resume.pdf`);
+      .from(RESUME_BUCKET)
+      .download(resumePath(user.id));
 
     if (downloadError || !blob) {
       return NextResponse.json(
@@ -38,7 +39,8 @@ export async function POST() {
       const parser = new PDFParse({ data: buffer });
       const pdfData = await parser.getText();
       text = pdfData.text?.trim() ?? "";
-    } catch {
+    } catch (parseErr) {
+      console.error("[api/resume/extract] pdf parse failed:", parseErr);
       return NextResponse.json(
         { success: false, error: "Could not extract text from this PDF. Please try a different file." },
         { status: 422 },

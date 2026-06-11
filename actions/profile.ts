@@ -5,6 +5,11 @@ import { revalidatePath } from "next/cache";
 import { createInsforgeServer } from "@/lib/insforge-server";
 import { createPostHogServer } from "@/lib/posthog-server";
 import { getProfileCompletion } from "@/lib/profile-completion";
+import {
+  RESUME_BUCKET,
+  overwriteResume,
+  resumePath,
+} from "@/lib/resume-storage";
 import type {
   CoverLetterTone,
   Education,
@@ -116,10 +121,7 @@ function normalize(
   };
 }
 
-const RESUME_BUCKET = "resumes";
 const MAX_RESUME_BYTES = 5 * 1024 * 1024; // 5 MB
-
-const resumePath = (userId: string): string => `${userId}/resume.pdf`;
 
 // Uploads a PDF to the PRIVATE resumes bucket and records its storage path on
 // the profile. The bucket has no public URL — the file is served only through
@@ -149,18 +151,10 @@ export async function uploadResume(
     }
 
     const path = resumePath(user.id);
-    const bucket = insforge.storage.from(RESUME_BUCKET);
 
-    // No upsert option in the SDK — remove any existing file first, then upload.
-    try {
-      await bucket.remove(path);
-    } catch {
-      // First upload — nothing to remove.
-    }
-
-    const { error: uploadError } = await bucket.upload(path, file);
+    const { error: uploadError } = await overwriteResume(insforge, user.id, file);
     if (uploadError) {
-      console.error("[actions/profile] resume upload", uploadError.message);
+      console.error("[actions/profile] resume upload", uploadError);
       return { success: false, error: "Failed to upload resume" };
     }
 
@@ -187,6 +181,51 @@ export async function uploadResume(
     const msg = error instanceof Error ? error.message : String(error);
     console.error("[actions/profile] uploadResume", msg);
     return { success: false, error: "Failed to upload resume" };
+  }
+}
+
+export async function deleteResume(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const insforge = await createInsforgeServer();
+    const { data: authData, error: authError } =
+      await insforge.auth.getCurrentUser();
+    const user = authData?.user;
+    if (authError || !user) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const path = resumePath(user.id);
+    // Non-fatal — if the file is already gone from storage, the DB record must
+    // still be cleared so the user is never stuck with a broken reference.
+    try {
+      await insforge.storage.from(RESUME_BUCKET).remove(path);
+    } catch (storageErr) {
+      console.error("[actions/profile] deleteResume storage:", storageErr);
+    }
+
+    const { error: dbError } = await insforge.database
+      .from("profiles")
+      .update({ resume_pdf_url: null })
+      .eq("id", user.id);
+    if (dbError) {
+      console.error("[actions/profile] deleteResume db:", dbError.message);
+      return { success: false, error: "Failed to update profile." };
+    }
+
+    const posthog = createPostHogServer();
+    posthog.capture({
+      distinctId: user.id,
+      event: "resume_deleted",
+      properties: { userId: user.id },
+    });
+    await posthog.shutdown();
+
+    revalidatePath("/profile");
+    return { success: true };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("[actions/profile] deleteResume", msg);
+    return { success: false, error: "Failed to delete resume." };
   }
 }
 
