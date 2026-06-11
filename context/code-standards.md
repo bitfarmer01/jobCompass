@@ -165,26 +165,30 @@ export async function saveProfile(formData: ProfileFormData) {
 
 ```typescript
 // agent/adzuna.ts
+import { logAgent } from "@/lib/agent-logs";
 
 export async function discoverJobs(
   jobTitle: string,
   location: string,
   profile: Profile,
+  userId: string,
   runId: string,
-): Promise<{ success: boolean; jobs?: Job[]; error?: string }> {
+): Promise<{ success: boolean; data?: { records: JobInsert[]; totalFound: number }; error?: string }> {
   try {
     // implementation
-    return { success: true, jobs };
+    return { success: true, data: { records, totalFound } };
   } catch (error) {
-    await logAgentError(runId, null, error);
-    return { success: false, error: String(error) };
+    console.error("[agent/adzuna]", error); // raw error stays server-side
+    await logAgent({ runId, userId, level: "error", message: "Job discovery failed" });
+    return { success: false, error: "Job search failed. Please try again." };
   }
 }
 ```
 
-- Every agent function returns `{ success: boolean, error?: string }`
+- Every agent function returns `{ success: boolean, data?, error?: string }`
 - Every agent function has a try/catch — never let one failure crash the run
-- Errors are always logged to agent_logs table before returning
+- Errors are always logged to agent_logs via `logAgent` from `lib/agent-logs.ts` before returning — `logAgent` is best-effort and never throws; its `message` is human readable (it feeds the dashboard recent-activity feed)
+- The returned `error` string is friendly/user-facing; the raw error goes to `console.error` only
 - Agent functions never import from `components/` or `actions/`
 - Agent functions never use React hooks or browser APIs
 
@@ -258,10 +262,9 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `NEXT_PUBLIC_INSFORGE_ANON_KEY` | lib/insforge-client.ts |
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
-| `OPENAI_API_KEY`                | agent/ functions       |
 | `NIM_API_KEY`                   | lib/nim-client.ts      |
-| `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
-| `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
+| `ADZUNA_ID`                     | lib/adzuna.ts          |
+| `ADZUNA_API_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_KEY`       | lib/posthog-client.ts  |
 | `NEXT_PUBLIC_POSTHOG_HOST`      | lib/posthog-client.ts  |
 
@@ -320,7 +323,7 @@ Approved dependencies for this project:
 - `@insforge/sdk` — InsForge client (SSR helpers under the `@insforge/sdk/ssr` subpath)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
-- `openai` — GPT-4o API and NVIDIA NIM (via custom baseURL in lib/nim-client.ts)
+- `openai` — OpenAI-compatible transport for NVIDIA NIM only (custom baseURL in lib/nim-client.ts) — never used against the OpenAI API
 - `posthog-js` — PostHog browser client
 - `posthog-node` — PostHog server client
 - `@react-pdf/renderer` — Resume PDF generation

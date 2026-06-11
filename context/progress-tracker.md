@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 3 — Find Jobs Page
-**Last completed:** 09 Find Jobs Page — Full UI
-**Next:** 10 Adzuna Job Discovery
+**Last completed:** 10 Adzuna Job Discovery
+**Next:** 11 Filter + Sort + Pagination
 
 ---
 
@@ -31,7 +31,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 3 — Find Jobs Page
 
 - [x] 09 Find Jobs Page — Full UI
-- [ ] 10 Adzuna Job Discovery
+- [x] 10 Adzuna Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page
@@ -61,6 +61,30 @@ Four tables + RLS created via InsForge MCP `run-raw-sql` (no app code). Matches 
 - **Indexes** on every FK/user_id column (`*_user_id_idx`, `jobs_run_id_idx`, `agent_logs_run_id_idx`) for user-scoped queries.
 - **Storage `resumes` bucket DEFERRED to feature 07/08** — `architecture.md` ("authenticated, own files only") conflicts with `library-docs.md`'s `getPublicUrl()` pattern (needs a public bucket; the `resumes/{user_id}/resume.pdf` path is guessable → a public bucket leaks PII). Private-bucket + `createSignedUrl()` vs public is decided when the resume read pattern actually exists. See note in `library-docs.md`.
 - **`run-raw-sql` rejects `BEGIN/COMMIT`** (transaction control not allowed) — it wraps the batch itself; send plain multi-statement DDL.
+
+### Scoring revision — Keyword-first, LLM fallback (2026-06-11)
+
+Revisits feature 10's matcher: a deterministic keyword layer now runs FIRST; the NIM reasoning model only scores jobs the keyword layer can't resolve. Cheaper (fewer LLM calls), stable/repeatable on the common case, and reserves the model for genuinely ambiguous jobs. `tsc` clean; keyword logic validated against symbol-skill and word-boundary edge cases.
+
+- **`agent/matcher.ts`** — `scoreJob(job, profile, searchedTitle?)` now routes: `keywordScore()` first, else `scoreJobWithLLM()` (the prior NIM logic, unchanged).
+  - **`keywordScore`** returns a deterministic `JobScore`, or `null` (= "not an exact keyword match" → fall back to LLM). A confident match requires BOTH title alignment (searched title or any `job_titles_seeking` appears in `job.title`) AND ≥1 skill keyword present in the listing. Else → `null`.
+  - **`keywordHit`** — word-token match with **non-alphanumeric boundaries** (not `\b`) + regex-escaping, so symbol skills (C++, C#, .NET, Node.js) match and substrings don't false-positive (`golang`↛`Go`, `reactjs`↛`React`).
+  - **Score formula** — `60 (title base) + min(40, matchedCount×12)` → 1 skill = 72, 2 = 84, 3 = 96, 4+ = 100 (all ≥70 "High"). A coverage *ratio* was deliberately avoided — it punishes Adzuna's one-line snippets. `missingSkills: []` on this path (unknowable from a snippet without the full JD; documented).
+- **`agent/adzuna.ts`** — `discoverJobs` passes its `jobTitle` into `scoreJob` so the keyword layer has the searched title for alignment.
+- **Open items from the prior scoring review (NOT addressed here):** profile breadth (work_experience/remote/salary still unused by the LLM path), batched/calibrated LLM scoring, robust JSON-extraction + per-call timeout, re-scoring on the full JD. Tracked for a follow-up.
+
+### Feature 10 — Adzuna Job Discovery (2026-06-11)
+
+Find Jobs button wired end-to-end: Adzuna search → NIM scoring → DB save → real banner counts. Jobs table stays on mock data until feature 11. `tsc` + `next build` clean.
+
+- **`lib/adzuna.ts`** (new) — `searchJobs(jobTitle, location, country)` per library-docs.md (always `category=it-jobs`, `results_per_page=10`, `where` omitted when location empty) + `detectCountry()` keyword lookup (gb/au/ca, default us). **Env names are `ADZUNA_ID` + `ADZUNA_API_KEY`** (actual `.env.local` names — code-standards/library-docs updated from the older `ADZUNA_APP_ID`/`ADZUNA_APP_KEY`).
+- **`agent/matcher.ts`** (new) — `scoreJob(job, profile)` on NIM `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (same as extractor; scoring quality is the core product value). Returns `JobScore` (`matchScore` 0-100 clamped, `matchReason`, `matchedSkills`, `missingSkills`), defensively normalized.
+- **`agent/adzuna.ts`** (new) — `discoverJobs()` orchestrator: search → score all results concurrently (`Promise.allSettled`) → map to `jobs` rows (`source: 'search'`, salary `$Xk - $Yk` or null, snippet as `about_role`, empty bullet arrays). Follows the agent contract: returns `{ success, data?: { records, totalFound }, error? }` with its own try/catch + friendly error. **A job whose scoring fails is skipped, not saved** (warning logged to agent_logs) — a row without match data would break the score-bar UI.
+- **`lib/agent-logs.ts`** (new) — `logAgent({ runId, userId, message, level, jobId? })`: best-effort insert into `agent_logs`, never throws (logging can't fail a run). Human-readable messages — this feeds the dashboard recent-activity feed (feature 16). Search runs log: `success` summary on completion, `warning` per skipped job, `error` on discovery/persistence failure. code-standards.md Agent Code section updated to this real pattern.
+- **`app/api/agent/find/route.ts`** (new) — POST: auth → 422 on empty jobTitle / missing profile → insert `agent_runs` (`running`) → `discoverJobs` → bulk-insert jobs → update run (`completed` + `jobs_found`). Any mid-run failure marks the run `failed` (never stuck on `running`); **all `agent_runs` updates are scoped `.eq("id").eq("user_id")`** per the always-filter-by-user invariant (defense in depth over RLS). Returns `{ success, jobsFound, totalFound, strongMatches }` (strong = `match_score >= MATCH_THRESHOLD`). PostHog `job_search_started` + per-job `job_found` (`{ source, matchScore }` per project-overview spec) — wrapped, can never fail the response.
+- **Types** — `Job`, `JobInsert`, `AgentRun`, `AgentRunStatus`, `JobScore` added to `types/index.ts` (snake_case, mirroring the tables).
+- **`SearchControls.tsx`** — mock defaults/banner removed; inputs start empty. Find Jobs → `fetch POST /api/agent/find`, button disabled + `Loader2` spinner + "Searching..." while running. Success banner shows real counts; new error banner (`border-error/30 bg-error/10 text-error`, TriangleAlert icon) for failures/empty title.
+- **OpenAI purge (same pass, user mandate: no OpenAI anywhere)** — "GPT-4o" removed from Hero/HowItWorks copy (→ "AI") and all context docs (→ NIM); mock company "OpenAI" → "Anthropic"; `OPENAI_API_KEY` dropped from code-standards env table; library-docs "OpenAI GPT-4o" section replaced with "AI Model Rules" (NIM); **feature 13 Stagehand blocks re-specced to NIM via OpenAI-compatible custom model config — verify when feature 13 starts**. The `openai` npm package STAYS — it is purely the OpenAI-compatible transport for NIM in `lib/nim-client.ts`, never the OpenAI API.
 
 ### Feature 09 — Find Jobs Page Full UI (2026-06-11)
 
