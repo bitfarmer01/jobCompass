@@ -163,11 +163,11 @@ border-radius: 9999px
 background track: #E7EAF3
 ```
 
-Fill color by score:
+Fill color by score (use `ui-tokens.md` Match Score Colors as the single source of truth):
 
-- 80-100%: `#10B981` (green)
-- 60-79%: `#61A8FF` (blue)
-- Below 60%: `#FF8904` (orange)
+- 90-100%: `bg-success` (#10B981 green)
+- 75-89%: `bg-info-medium` (#2B7FFF blue)
+- Below 75%: `bg-warning` (#FF8904 orange)
 
 ---
 

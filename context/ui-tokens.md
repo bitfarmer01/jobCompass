@@ -155,14 +155,16 @@ Used for: primary buttons, active nav items, match score bars, tailored badge, f
 
 ### Match Score Colors
 
-Match score bars and indicators use gradient stops based on score range:
+**Canonical thresholds (use these everywhere — bars, badges, labels):**
 
-| Score Range | Color  | Token                                  |
-| ----------- | ------ | -------------------------------------- |
-| 90-100%     | Green  | `text-success` / `bg-success-lightest` |
-| 70-89%      | Green  | `text-success` / `bg-success-light`    |
-| 50-69%      | Orange | `text-warning`                         |
-| Below 50%   | Gray   | `text-text-muted`                      |
+| Score Range | Color  | Bar token (`bg-*`)  | Text token           |
+| ----------- | ------ | ------------------- | -------------------- |
+| 90-100%     | Green  | `bg-success`        | `text-success`       |
+| 75-89%      | Blue   | `bg-info-medium`    | `text-info-medium`   |
+| Below 75%   | Orange | `bg-warning`        | `text-warning`       |
+
+These thresholds are calibrated to the design. Do not use the old 80/60 split or the
+ui-rules.md table — this table is the single source of truth for score coloring.
 
 ### Skills Badges
 
@@ -175,8 +177,9 @@ Match score bars and indicators use gradient stops based on score range:
 
 | Source   | Background             | Text                  |
 | -------- | ---------------------- | --------------------- |
-| LinkedIn | `bg-linkedin-light`    | `text-linkedin`       |
+| Search   | `bg-accent-light`      | `text-accent`         |
 | URL      | `bg-surface-secondary` | `text-text-secondary` |
+| LinkedIn | `bg-linkedin-light`    | `text-linkedin`       |
 
 ### Status Badges
 

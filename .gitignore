@@ -50,6 +50,8 @@ yarn-error.log*
 
 # editor / internal settings
 .vscode/settings.json
+# Claude Code local settings — contains machine-specific permission grants/secrets
+.claude/settings.local.json
 
 # local-only: MCP config (contains secrets), agent copy, session notes
 .mcp.json

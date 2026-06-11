@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *progress-tracker.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"context/progress-tracker.md was just updated, which signals a feature is complete. Run the /review skill now to verify the feature against the plan, architecture, and design standards before moving on.\"}}' ;; esac; } 2>/dev/null || true",
+            "statusMessage": "Checking for feature completion…"
+          }
+        ]
+      }
+    ]
+  }
+}
