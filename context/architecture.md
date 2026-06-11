@@ -9,7 +9,7 @@
 | Cloud browser                  | Browserbase              | Company research — browsing company public pages |
 | AI browser control             | Stagehand                | Company page interaction and content extraction  |
 | Job Discovery                  | Adzuna API               | Job search and discovery                         |
-| AI model                       | OpenAI GPT-4o            | Matching, research synthesis, extraction         |
+| AI model                       | NVIDIA NIM (Nemotron)    | Matching, research synthesis, extraction         |
 | Analytics                      | PostHog                  | Event tracking and dashboard charts              |
 | PDF generation                 | @react-pdf/renderer      | Resume PDF rendering                             |
 | Styling                        | Tailwind CSS + shadcn/ui | UI components and styling                        |
@@ -60,9 +60,9 @@
 │       │   ├── generate/route.ts          → Generate base resume PDF from profile
 │       │   └── extract/route.ts           → Extract profile data from uploaded resume PDF
 ├── agent/
-│   ├── adzuna.ts                          → Adzuna API job discovery + GPT-4o scoring
-│   ├── research.ts                        → Company research — Browserbase + Stagehand + GPT-4o
-│   ├── matcher.ts                         → GPT-4o job matching logic
+│   ├── adzuna.ts                          → Adzuna API job discovery + NIM scoring
+│   ├── research.ts                        → Company research — Browserbase + Stagehand + NIM
+│   ├── matcher.ts                         → NIM job matching logic
 │   ├── extractor.ts                       → NIM resume → structured profile extraction
 │   ├── resume-generator.ts                → NIM profile → polished resume content (summary + bullets)
 │   └── types.ts                           → Agent-specific TypeScript types
@@ -157,7 +157,7 @@ Calls agent/adzuna.ts
         ↓
 Adzuna API returns job listings
         ↓
-GPT-4o scores each job against user profile
+NIM scores each job against user profile
         ↓
 Agent writes results to InsForge DB
         ↓
@@ -177,7 +177,7 @@ Single Browserbase session opens with Stagehand
         ↓
 Navigates to company homepage + sub pages
         ↓
-GPT-4o synthesizes dossier from extracted content
+NIM synthesizes dossier from extracted content
         ↓
 Dossier saved to jobs.company_research
         ↓
@@ -191,7 +191,7 @@ User uploads resume or clicks Generate
         ↓
 API route in app/api/resume/
         ↓
-GPT-4o processes content
+NIM processes content
         ↓
 @react-pdf/renderer renders PDF buffer
         ↓
@@ -268,7 +268,7 @@ URL saved to profiles table
 | benefits           | text[]      | Optional                                       |
 | about_company      | text        | Brief company description                      |
 | match_score        | integer     | 0-100 scored against main profile              |
-| match_reason       | text        | GPT-4o explanation                             |
+| match_reason       | text        | NIM explanation                             |
 | matched_skills     | text[]      | Skills user has that match                     |
 | missing_skills     | text[]      | Skills user lacks                              |
 | company_research   | jsonb       | Company dossier from research agent            |
@@ -362,8 +362,8 @@ const session = await bb.sessions.create({
 ```typescript
 const response = await fetch(
   `https://api.adzuna.com/v1/api/jobs/us/search/1?` +
-    `app_id=${process.env.ADZUNA_APP_ID}&` +
-    `app_key=${process.env.ADZUNA_APP_KEY}&` +
+    `app_id=${process.env.ADZUNA_ID}&` +
+    `app_key=${process.env.ADZUNA_API_KEY}&` +
     `what=${encodeURIComponent(jobTitle)}&` +
     `where=${encodeURIComponent(location)}&` +
     `category=it-jobs&` +
@@ -387,8 +387,13 @@ const stagehand = new Stagehand({
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  modelName: "gpt-4o",
-  modelClientOptions: { apiKey: process.env.OPENAI_API_KEY! },
+  // NIM via Stagehand's OpenAI-compatible custom model support — this project
+  // never uses the OpenAI API. Verify exact config when feature 13 starts.
+  modelName: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+  modelClientOptions: {
+    apiKey: process.env.NIM_API_KEY!,
+    baseURL: "https://integrate.api.nvidia.com/v1",
+  },
 });
 
 await stagehand.init();
@@ -409,7 +414,7 @@ try {
   await page.waitForLoadState("networkidle");
   const content = await stagehand.extract({ instruction: "..." });
 } catch (error) {
-  // Log and continue — GPT-4o will synthesize from what was found
+  // Log and continue — NIM will synthesize from what was found
   await logAgentError(jobId, error);
 }
 
@@ -429,7 +434,7 @@ Rules the AI agent must never violate:
 - All InsForge server-side writes use `createInsforgeServer()` — never the browser client.
 - No hardcoded hex values or raw Tailwind color classes in components — use CSS variables from ui-tokens.md.
 - Every Stagehand action is wrapped in try/catch. Failures are logged to agent_logs, never thrown to crash the run.
-- Company research always returns a dossier — even if browser research fails, GPT-4o synthesizes from company name and job description alone. Never return empty.
+- Company research always returns a dossier — even if browser research fails, NIM synthesizes from company name and job description alone. Never return empty.
 - Browserbase sessions are always closed with stagehand.close() when done — never leave sessions open.
 - Always scope InsForge queries to the current user_id — never query without a user filter.
 - Adzuna API always includes category=it-jobs — never search without this filter.

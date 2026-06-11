@@ -24,7 +24,7 @@ export function Hero({ ctaHref = "/login" }: Props) {
           style={{ fontSize: 18, lineHeight: "28px" }}
         >
           JobCompass discovers jobs from Adzuna, scores each one against your profile using
-          GPT-4o, and researches companies — so you apply with confidence every time.
+          AI, and researches companies — so you apply with confidence every time.
         </p>
 
         <div className="flex items-center gap-4 mb-16">

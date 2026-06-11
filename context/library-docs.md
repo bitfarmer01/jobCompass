@@ -216,8 +216,8 @@ export async function searchJobs(
   country: string = "us",
 ): Promise<AdzunaJob[]> {
   const params = new URLSearchParams({
-    app_id: process.env.ADZUNA_APP_ID!,
-    app_key: process.env.ADZUNA_APP_KEY!,
+    app_id: process.env.ADZUNA_ID!,
+    app_key: process.env.ADZUNA_API_KEY!,
     what: jobTitle,
     category: "it-jobs", // always filter to IT jobs
     results_per_page: "10",
@@ -295,7 +295,7 @@ const jobRecord = {
 - Never pass `where` if location is empty — omit the parameter entirely
 - `source` is always `'search'` for Adzuna jobs — never any other value
 - `salary_is_predicted: "1"` means Adzuna estimated the salary — this is normal
-- Adzuna description is a snippet — GPT-4o scores from it, not a full description
+- Adzuna description is a snippet — the NIM matcher scores from it, not a full description
 - Default country to `'us'` — support `gb`, `au`, `ca` as alternatives
 
 ---
@@ -345,7 +345,13 @@ const stagehand = new Stagehand({
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  model: { modelName: "openai/gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
+  // NIM via Stagehand's OpenAI-compatible custom model support — this project
+  // never uses the OpenAI API. Verify exact config when feature 13 starts.
+  model: {
+    modelName: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    apiKey: process.env.NIM_API_KEY!,
+    baseURL: "https://integrate.api.nvidia.com/v1",
+  },
   disablePino: true,
 });
 
@@ -398,7 +404,7 @@ Replace the existing Stagehand "Company Research Pattern" section in library-doc
 
 ### Company Research Pattern
 
-Three-step process: homepage extraction → sub-page extraction → GPT-4o synthesis.
+Three-step process: homepage extraction → sub-page extraction → NIM synthesis.
 Job description and user profile come from DB — never re-fetch what you already have.
 Browser's only job is the company website.
 
@@ -459,7 +465,7 @@ const subPageData = await stagehand.extract({
   }),
 });
 
-// Step 3 — GPT-4o synthesis (after browser closes)
+// Step 3 — NIM synthesis (after browser closes)
 // Feed three data sources: company research + job from DB + profile from DB
 const systemPrompt = `You are a sharp career strategist preparing a candidate to apply for a specific role. You are given (a) research collected from the company's own website, (b) the job posting, and (c) the candidate's profile. Produce a concise, concrete briefing that gives this specific candidate an edge for this specific role.
 
@@ -499,15 +505,19 @@ Experience: ${profile.years_experience} years, level ${profile.experience_level}
 Skills: ${profile.skills.join(", ")}
 Work history: ${JSON.stringify(profile.work_experience)}`;
 
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
-  response_format: { type: "json_object" },
+const content = await streamNimContent({
+  model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
   temperature: 0.4,
+  max_tokens: 4096,
+  reasoning_budget: 1024,
+  chat_template_kwargs: { enable_thinking: true },
+  stream: true,
   messages: [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ],
 });
+const dossier = JSON.parse(content);
 ```
 
 **Dossier fields:**
@@ -529,7 +539,7 @@ const response = await openai.chat.completions.create({
 - Always use `extract()` with a Zod schema — never parse raw HTML or use regex
 - Always wrap every `act()` and `extract()` in try/catch
 - Always call `await stagehand.close()` when done — ends the Browserbase session
-- Model is always `gpt-4o` — never use other models
+- Model is the NIM 30b reasoning model (see NVIDIA NIM section) — never the OpenAI API
 - Temperature is `0.4` for synthesis — grounded but flexible enough to make real connections
 - Max 3 sub-pages — never exceed this on free plan
 - Always close session in finally block — never leave sessions open even if research fails
@@ -539,7 +549,7 @@ const response = await openai.chat.completions.create({
 
 ## NVIDIA NIM
 
-Used for AI extraction (feature 07) and resume generation (feature 08). Same `openai` npm package, different `baseURL`.
+The only AI provider in this project — OpenAI is never used. Powers extraction (feature 07), resume generation (feature 08), and job match scoring (feature 10). The `openai` npm package serves purely as the OpenAI-compatible transport, pointed at NVIDIA via `baseURL`.
 
 ### Client
 
@@ -590,54 +600,16 @@ const data = JSON.parse(content);
 
 ---
 
-## OpenAI GPT-4o
+## AI Model Rules
 
-**Check first:** Check AGENTS.md for an installed OpenAI skill. The skill will have the latest API patterns and model capabilities.
+**OpenAI is never used in this project** — no OpenAI models, no `OPENAI_API_KEY`. Every LLM call goes through `streamNimContent` in `lib/nim-client.ts` (NVIDIA NIM section above), which holds the model constants and per-feature configs.
 
-### Structured JSON Response
+Cross-cutting rules for all model calls:
 
-```typescript
-import OpenAI from "openai";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
-  response_format: { type: "json_object" },
-  temperature: 0.3,
-  messages: [
-    {
-      role: "system",
-      content: "You are a job matching assistant. Return only valid JSON.",
-    },
-    {
-      role: "user",
-      content: `Your prompt here`,
-    },
-  ],
-});
-
-const result = JSON.parse(response.choices[0].message.content!);
-```
-
-**Temperature settings:**
-
-- `0.3` — matching, scoring, extraction, research synthesis — deterministic results
-- `0.7` — resume generation — natural variation
-
-**Max tokens:**
-
-- Job matching + scoring: `300`
-- Company research synthesis: `800`
-- Resume generation: `1000`
-- Profile extraction from resume: `800`
-
-**Rules:**
-
-- Model string is always `'gpt-4o'` — never use other model names
-- Always use `response_format: { type: 'json_object' }` for structured data
-- Always parse `response.choices[0].message.content` as string — even with json_object it returns a string
-- Always validate parsed JSON before using — wrap in try/catch
+- **Job match scoring** (`agent/matcher.ts`, feature 10) → 30b reasoning model, `temperature: 0.2`, `max_tokens: 2048`, `reasoning_budget: 1024` — returns `{ matchScore, matchReason, matchedSkills, missingSkills }`
+- **Research synthesis** (feature 13) → 30b reasoning model, `temperature: 0.4` — grounded but flexible enough to make real connections
+- System prompts demand ONLY valid JSON — no markdown, no code fences (`streamNimContent` strips think-blocks and fences defensively)
+- Always validate parsed JSON before using — wrap in try/catch and normalize fields defensively
 - Match threshold is always `MATCH_THRESHOLD` from `lib/utils.ts` — never hardcode 70
 - Company research synthesis must always return a complete dossier — never return empty even if browser research failed
 
@@ -801,6 +773,6 @@ const text = result.text; // full raw text as a single string
 **Rules:**
 
 - Server-side only — never import in client components
-- `pdfData.text` is raw unformatted text — GPT-4o handles the structure extraction
+- `pdfData.text` is raw unformatted text — the NIM extractor handles the structure extraction
 - Always handle parse errors — some PDFs are image-based and return empty text
 - If `pdfData.text` is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."

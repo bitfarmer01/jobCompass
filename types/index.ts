@@ -54,6 +54,59 @@ export type ExtractedProfile = Partial<
   Omit<Profile, "id" | "email" | "resume_pdf_url" | "is_complete">
 >;
 
+// Mirrors the `agent_runs` table (snake_case, see context/architecture.md).
+export type AgentRunStatus = "running" | "completed" | "failed";
+
+export type AgentRun = {
+  id: string;
+  user_id: string;
+  status: AgentRunStatus;
+  job_title_searched: string | null;
+  location_searched: string | null;
+  jobs_found: number;
+  started_at: string;
+  completed_at: string | null;
+};
+
+// Mirrors the `jobs` table (snake_case, see context/architecture.md).
+export type Job = {
+  id: string;
+  run_id: string | null;
+  user_id: string;
+  source: "search" | "url";
+  source_url: string | null;
+  external_apply_url: string | null;
+  title: string | null;
+  company: string | null;
+  location: string | null;
+  salary: string | null;
+  job_type: string | null;
+  about_role: string | null;
+  responsibilities: string[];
+  requirements: string[];
+  nice_to_have: string[];
+  benefits: string[];
+  about_company: string | null;
+  match_score: number | null;
+  match_reason: string | null;
+  matched_skills: string[];
+  missing_skills: string[];
+  company_research: Record<string, unknown> | null;
+  found_at: string;
+};
+
+// Insert shape for discovery — id is DB-generated, company_research arrives
+// later from the research agent (feature 13).
+export type JobInsert = Omit<Job, "id" | "company_research">;
+
+// Output of agent/matcher.ts — one NIM scoring call per discovered job.
+export type JobScore = {
+  matchScore: number;
+  matchReason: string;
+  matchedSkills: string[];
+  missingSkills: string[];
+};
+
 export type GeneratedResumeContent = {
   summary: string;
   workExperience: Array<{

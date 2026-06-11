@@ -6,7 +6,7 @@ const features = [
     icon: Target,
     title: "Find the Jobs That Fit You",
     description:
-      "Enter a job title and location. The agent searches Adzuna and GPT-4o scores every result 0–100 against your actual profile — with matched and missing skills listed for every job.",
+      "Enter a job title and location. The agent searches Adzuna and AI scores every result 0–100 against your actual profile — with matched and missing skills listed for every job.",
   },
   {
     icon: Building2,
