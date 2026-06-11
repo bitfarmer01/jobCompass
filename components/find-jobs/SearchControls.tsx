@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, Search, Sparkles, TriangleAlert } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ type SearchResult =
   | { kind: "error"; message: string };
 
 export function SearchControls() {
+  const router = useRouter();
   const [jobTitle, setJobTitle] = useState("");
   const [location, setLocation] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -41,6 +43,9 @@ export function SearchControls() {
           jobsFound: data.jobsFound ?? 0,
           strongMatches: data.strongMatches ?? 0,
         });
+        // Re-run the server component so the newly saved jobs appear in the
+        // table below. Client state (this success banner) is preserved.
+        router.refresh();
       } else {
         setResult({
           kind: "error",

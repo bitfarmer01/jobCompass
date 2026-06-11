@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 3 — Find Jobs Page
-**Last completed:** 10 Adzuna Job Discovery
-**Next:** 11 Filter + Sort + Pagination
+**Last completed:** 11 Filter + Sort + Pagination
+**Next:** 12 Job Details Page — Full UI
 
 ---
 
@@ -32,7 +32,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 09 Find Jobs Page — Full UI
 - [x] 10 Adzuna Job Discovery
-- [ ] 11 Filter + Sort + Pagination
+- [x] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page
 
@@ -73,6 +73,18 @@ Revisits feature 10's matcher: a deterministic keyword layer now runs FIRST; the
 - **`agent/adzuna.ts`** — `discoverJobs` passes its `jobTitle` into `scoreJob` so the keyword layer has the searched title for alignment.
 - **Open items from the prior scoring review (NOT addressed here):** profile breadth (work_experience/remote/salary still unused by the LLM path), batched/calibrated LLM scoring, robust JSON-extraction + per-call timeout, re-scoring on the full JD. Tracked for a follow-up.
 
+### Feature 11 — Filter + Sort + Pagination (2026-06-11)
+
+Jobs table cut over from mock data to the real `jobs` table; filter/sort/text-search/pagination now operate on the signed-in user's saved jobs. This closes the "search appears to do nothing" gap — the table previously rendered hardcoded mock rows so discovered jobs never showed. `tsc` clean; `/find-jobs` compiles and serves (307 → login when unauthenticated). Note: `next build` currently fails at the **unrelated** `/_global-error` prerender (Next internal `workStore` invariant; `next` drifted to 16.2.9 vs the pinned 16.2.7) — not introduced by this feature.
+
+- **`lib/jobs.ts`** (new) — `getUserJobs()`: server-side read of the user's jobs, scoped `.eq("user_id")` (defense in depth over RLS), `.order("found_at", desc)`. Degrades to `[]` on any auth/db failure (mirrors `lib/auth.ts`) so the page renders its empty state instead of crashing. DB read lives here, not in a component, per the architecture boundary.
+- **`lib/utils.ts`** — added `formatRelativeTime(iso)` for the Date Found column (Just now / N minutes / hours / Yesterday / N days / short date); returns `""` on bad input.
+- **`app/find-jobs/page.tsx`** — now `async`; calls `getUserJobs()` and passes `jobs` into `JobsSection`.
+- **`JobsSection.tsx`** — mock array deleted; accepts `jobs: Job[]`. Filter (All/High≥70/Low<70), sort (Match desc / Newest / Oldest by `found_at`), and case-insensitive company/title text search all run on real data, then map to display rows via `toRow` (nullable `title`/`company`/`salary`/`match_score` resolved to placeholders). Pagination: `PER_PAGE=20`, page state, slices the current page, resets to page 1 on any filter/sort change, clamps `safePage` if the set shrinks.
+- **`JobsPagination.tsx`** — now functional: `onPageChange` wired to Previous/Next/page-number/first/last buttons with a compact page window + ellipses. (Was cosmetic — buttons had no handlers.)
+- **`JobsTable.tsx`** — `MockJob` type renamed `JobRow` (real data, not mock).
+- **`SearchControls.tsx`** — `router.refresh()` after a successful search re-runs the server component so newly saved jobs appear immediately; the success banner (client state) is preserved.
+
 ### Feature 10 — Adzuna Job Discovery (2026-06-11)
 
 Find Jobs button wired end-to-end: Adzuna search → NIM scoring → DB save → real banner counts. Jobs table stays on mock data until feature 11. `tsc` + `next build` clean.
@@ -97,6 +109,8 @@ Full UI with mock data. `tsc` + `next build` clean.
 - **`components/find-jobs/JobsTable.tsx`** — Client Component (`useRouter` for row click). HTML table with 6 columns (COMPANY, ROLE, MATCH SCORE, SALARY EST., SOURCE, DATE FOUND). Mock 6-row data (Vercel 94%, Stripe 88%, Linear 96%, Notion 72%, Anthropic 91%, Figma 85%). Company cell: Building2 icon in rounded box + name. Match score cell: inline progress bar + percentage. Source cell: accent/muted badge (Search/URL). Row hover: `bg-surface-secondary`. Rows separated by `border-b border-border`.
 - **`components/find-jobs/JobsPagination.tsx`** — Server Component. "Showing 1 to 6 of 24 results" left; Previous / page buttons / ellipsis / last page / Next right. Active page button uses `variant="default"` (accent fill); others `variant="outline"`.
 - **Score bar color rule:** ≥90% green (`bg-success`), ≥75% blue (`bg-info-medium`), <75% orange (`bg-warning`) — canonical thresholds per ui-tokens.md. Bar track: `bg-border-light`, height `h-1`, `w-20`.
+
+---
 
 ### Feature 08 — Resume PDF Generation from Profile (2026-06-11)
 
