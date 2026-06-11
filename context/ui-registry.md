@@ -226,3 +226,57 @@ the form. Form save is inert until feature 06.
 - Footer row: `flex items-center justify-between`; left group `flex gap-2`; secondary Buttons with `Trash2`/`RotateCcw` icons; danger confirm Button `className="text-error border-error/30 hover:bg-error/10"`
 - Save/error banner: `rounded-lg border px-4 py-3 text-sm font-medium` + `border-success/30 bg-success/10 text-success` or `border-error/30 bg-error/10 text-error`
 **Page container** (`app/profile/page.tsx`): `w-full max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6` (narrower than the 1440px marketing pages — forms read better centered).
+
+---
+
+## Find Jobs Components (feature 09)
+
+All under `components/find-jobs/`. Page (`app/find-jobs/page.tsx`) is a Server Component using `w-full max-w-[1440px] mx-auto px-8 py-8 flex flex-col gap-6`. Jobs section is a single white card (`bg-surface border border-border rounded-2xl shadow-[...] overflow-hidden`) containing the filter bar, table, and pagination — each separated by `border-b/t border-border`.
+
+### SearchControls
+**File:** `components/find-jobs/SearchControls.tsx`
+**Type:** Client Component (`"use client"` — controlled inputs)
+**Pattern:** White card with two labeled inputs (JOB TITLE + search icon, LOCATION) + primary Find Jobs button. Wired to `POST /api/agent/find` (feature 10): button disables with `Loader2` spinner + "Searching..." while running; a result banner renders below only after a run — green success with real counts, or error banner on failure/empty title. Inputs start empty (placeholders only).
+**Key classes:**
+- Card: `w-full bg-surface border border-border rounded-2xl p-6` + standard card shadow
+- Label: `text-xs font-medium text-text-secondary uppercase tracking-wide`
+- Search icon in input: `absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none`, `Input className="pl-9"`
+- Row: `flex flex-col sm:flex-row gap-4 items-end`; each field `flex flex-col gap-1.5 flex-1`
+- Button: `Button` default variant + `h-10 shrink-0`; loading: `disabled` + `Loader2 w-4 h-4 animate-spin`
+- Success banner: `mt-4 flex items-center gap-2 px-4 py-2.5 rounded-lg border border-success/30 bg-success/10` + `Sparkles` icon `text-success` + `text-sm font-medium text-success`
+- Error banner: same row layout with `border-error/30 bg-error/10` + `TriangleAlert` icon `text-error` + `text-sm font-medium text-error`
+
+### JobFilters
+**File:** `components/find-jobs/JobFilters.tsx`
+**Type:** Client Component (`"use client"` — controlled Select state)
+**Pattern:** Filter row with text search input + two Radix Select dropdowns (All Matches, Match Score).
+**Key classes:**
+- Row: `flex flex-col sm:flex-row items-center gap-3`
+- Search input wrapper: `relative flex-1 min-w-0`; Input `className="pl-9"`
+- Selects: `SelectTrigger className="w-full sm:w-[160px]"`; options: all/high/low and match-score/newest/oldest
+
+### JobsTable
+**File:** `components/find-jobs/JobsTable.tsx`
+**Type:** Client Component (`"use client"` — `useRouter` for row-click navigation)
+**Pattern:** HTML `<table>` with 6 columns. Mock 6-row data. Company cell has Building2 icon placeholder. Match score cell has inline bar + %. SOURCE column shows Search/URL badge. Empty state when no jobs. Row click → `router.push("/find-jobs/${job.id}")`.
+**Key classes:**
+- Table: `w-full` inside `overflow-x-auto`
+- Header cells: `px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wide`
+- Data rows: `hover:bg-surface-secondary transition-colors cursor-pointer`; last row no bottom border
+- Company icon box: `w-8 h-8 rounded-md bg-surface-secondary border border-border flex items-center justify-center flex-shrink-0`; `Building2 w-4 h-4 text-text-muted`
+- Company name: `text-sm font-medium text-text-primary`
+- Match score bar track: `w-20 h-1 rounded-full bg-border-light overflow-hidden flex-shrink-0`
+- Bar fill: `h-full rounded-full` + color by score (canonical thresholds from ui-tokens.md): ≥90% `bg-success`, 75-89% `bg-info-medium`, <75% `bg-warning`
+- Source badge: Search → `bg-accent-light text-accent`; URL → `bg-surface-secondary text-text-secondary` — `rounded-full px-2 py-0.5 text-xs font-medium`
+- Salary / role text: `text-sm text-text-primary`; date: `text-sm text-text-muted`
+- **Empty state:** `Briefcase w-10 h-10 text-text-muted` + title `text-sm font-medium text-text-primary` + sub `text-sm text-text-muted`; rendered in a full-width `<td colSpan={6} className="px-6 py-16">`
+
+### JobsPagination
+**File:** `components/find-jobs/JobsPagination.tsx`
+**Type:** Server Component (receives `total`, `perPage`, `currentPage` props)
+**Pattern:** "Showing X to Y of Z results" left, page buttons right. Active page uses `Button` default variant (accent fill), others use `variant="outline"`. Ellipsis between page 3 and last page.
+**Key classes:**
+- Row: `flex items-center justify-between`
+- Summary: `text-sm text-text-secondary`; bold spans `font-medium text-text-primary`
+- Buttons: `Button size="sm"` with `variant="default"` (active) or `variant="outline"` (inactive/prev/next)
+- Ellipsis: `px-2 text-sm text-text-muted`

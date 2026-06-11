@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 2 — Profile Page (complete)
-**Last completed:** 08 Resume PDF Generation from Profile
-**Next:** 09 Find Jobs Page — Full UI
+**Phase:** Phase 3 — Find Jobs Page
+**Last completed:** 09 Find Jobs Page — Full UI
+**Next:** 10 Adzuna Job Discovery
 
 ---
 
@@ -30,7 +30,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 3 — Find Jobs Page
 
-- [ ] 09 Find Jobs Page — Full UI
+- [x] 09 Find Jobs Page — Full UI
 - [ ] 10 Adzuna Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
@@ -61,6 +61,18 @@ Four tables + RLS created via InsForge MCP `run-raw-sql` (no app code). Matches 
 - **Indexes** on every FK/user_id column (`*_user_id_idx`, `jobs_run_id_idx`, `agent_logs_run_id_idx`) for user-scoped queries.
 - **Storage `resumes` bucket DEFERRED to feature 07/08** — `architecture.md` ("authenticated, own files only") conflicts with `library-docs.md`'s `getPublicUrl()` pattern (needs a public bucket; the `resumes/{user_id}/resume.pdf` path is guessable → a public bucket leaks PII). Private-bucket + `createSignedUrl()` vs public is decided when the resume read pattern actually exists. See note in `library-docs.md`.
 - **`run-raw-sql` rejects `BEGIN/COMMIT`** (transaction control not allowed) — it wraps the batch itself; send plain multi-statement DDL.
+
+### Feature 09 — Find Jobs Page Full UI (2026-06-11)
+
+Full UI with mock data. `tsc` + `next build` clean.
+
+- **`app/find-jobs/layout.tsx`** — same auth-aware navbar shell as dashboard/profile layouts.
+- **`app/find-jobs/page.tsx`** — Server Component; assembles SearchControls + the jobs card (JobFilters + JobsTable + JobsPagination).
+- **`components/find-jobs/SearchControls.tsx`** — Client Component. Two controlled inputs (JOB TITLE with Search icon, LOCATION), primary Find Jobs button, green success banner ("Found 8 jobs and saved 4 strong matches.") with Sparkles icon. Mock values pre-filled.
+- **`components/find-jobs/JobFilters.tsx`** — Client Component. Text search input (Filter by company or role...) + two controlled Radix Selects: "All Matches" (all/high/low) and "Match Score" (match-score/newest/oldest).
+- **`components/find-jobs/JobsTable.tsx`** — Client Component (`useRouter` for row click). HTML table with 6 columns (COMPANY, ROLE, MATCH SCORE, SALARY EST., SOURCE, DATE FOUND). Mock 6-row data (Vercel 94%, Stripe 88%, Linear 96%, Notion 72%, Anthropic 91%, Figma 85%). Company cell: Building2 icon in rounded box + name. Match score cell: inline progress bar + percentage. Source cell: accent/muted badge (Search/URL). Row hover: `bg-surface-secondary`. Rows separated by `border-b border-border`.
+- **`components/find-jobs/JobsPagination.tsx`** — Server Component. "Showing 1 to 6 of 24 results" left; Previous / page buttons / ellipsis / last page / Next right. Active page button uses `variant="default"` (accent fill); others `variant="outline"`.
+- **Score bar color rule:** ≥90% green (`bg-success`), ≥75% blue (`bg-info-medium`), <75% orange (`bg-warning`) — canonical thresholds per ui-tokens.md. Bar track: `bg-border-light`, height `h-1`, `w-20`.
 
 ### Feature 08 — Resume PDF Generation from Profile (2026-06-11)
 
