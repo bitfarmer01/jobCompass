@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { createInsforgeServer } from "@/lib/insforge-server";
+import { RESUME_BUCKET, resumePath } from "@/lib/resume-storage";
 
 // Serves the authenticated user's OWN resume from the private bucket. The path
 // is derived from the session — a user can never request another user's file,
-// and the bucket has no public URL.
-export async function GET() {
+// and the bucket has no public URL. `?download=1` switches from inline preview
+// to a file download (Content-Disposition: attachment).
+export async function GET(request: Request) {
   try {
     const insforge = await createInsforgeServer();
     const { data: authData, error: authError } =
@@ -18,8 +20,8 @@ export async function GET() {
     }
 
     const { data: blob, error } = await insforge.storage
-      .from("resumes")
-      .download(`${user.id}/resume.pdf`);
+      .from(RESUME_BUCKET)
+      .download(resumePath(user.id));
 
     if (error || !blob) {
       return NextResponse.json(
@@ -28,12 +30,15 @@ export async function GET() {
       );
     }
 
+    const isDownload =
+      new URL(request.url).searchParams.get("download") === "1";
+
     const arrayBuffer = await blob.arrayBuffer();
     return new NextResponse(arrayBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": 'inline; filename="resume.pdf"',
+        "Content-Disposition": `${isDownload ? "attachment" : "inline"}; filename="resume.pdf"`,
         "Cache-Control": "private, no-store",
       },
     });

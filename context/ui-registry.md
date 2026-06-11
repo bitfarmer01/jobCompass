@@ -204,22 +204,25 @@ the form. Form save is inert until feature 06.
 
 ### ResumeUpload
 **File:** `components/profile/ResumeUpload.tsx`
-**Type:** Client Component (`"use client"` — drag state, hidden file input, `useTransition`)
-**Behavior (feature 06):** On PDF select/drop → validates type → `uploadResume(formData)` Server Action → uploads to the **private** `resumes` bucket. Props: `initialResumePath?: string`. Shows a "Resume on file" row with a **View** link to `GET /api/resume` (the authenticated stream) when a resume exists; "Uploading…" during the transition; inline error banner on failure. "Generate Resume from Profile" button still inert (feature 08).
+**Type:** Client Component (`"use client"` — drag state, hidden file input, `useTransition` + local fetch states)
+**Behavior (features 06/07/08):** On PDF select/drop → validates type → `uploadResume(formData)` Server Action → uploads to the **private** `resumes` bucket. Props: `initialResumePath?: string`, `onExtracted?: (data: ExtractedProfile) => void`. Shows a "Resume on file" row with **View** (link to `GET /api/resume`, inline preview in a new tab), **Download** (`GET /api/resume?download=1` → `Content-Disposition: attachment`), and **Delete** (inline confirmation → `deleteResume()` Server Action). "Extract from Resume" (visible only with a resume on file) POSTs `/api/resume/extract`; "Generate Resume from Profile" POSTs `/api/resume/generate` with a 120s `AbortController` timeout. All three async states (`isPending`/`isExtracting`/`isGenerating`) mutually disable the action buttons. Success banners for extract + generate; inline error banner on any failure.
 **Key classes:**
 - Card: standard surface card (see CompletionIndicator)
-- Current-resume row: `flex items-center justify-between rounded-lg border border-border bg-surface-secondary px-4 py-3`; View link `text-accent hover:text-accent-dark`
+- Current-resume row: `flex items-center justify-between rounded-lg border border-border bg-surface-secondary px-4 py-3`; View link `text-accent hover:text-accent-dark`; Delete trigger `text-error hover:text-error/80`
+- **Inline destructive confirmation** (pattern — reuse for any destructive action): row swaps to `rounded-lg border border-error/30 bg-error/10 px-4 py-3` with a question (`text-sm font-medium text-text-primary`) + secondary `Cancel` and a danger-styled secondary Button `className="text-error border-error/30 hover:bg-error/10"` for Confirm
 - Drop zone idle: `rounded-lg border border-dashed border-border-muted bg-surface-secondary hover:bg-surface-tertiary px-6 py-10`; dragging: `border-accent bg-accent-muted`
-- Error banner: `rounded-lg border border-error/30 bg-error/10 text-error px-4 py-3 text-sm font-medium`
-- Icons: `UploadCloud`/`FileText`/`Sparkles`/`ExternalLink` from lucide
+- Error banner: `rounded-lg border border-error/30 bg-error/10 text-error px-4 py-3 text-sm font-medium`; success banner: same shape with `border-success/30 bg-success/10 text-success`
+- Icons: `UploadCloud`/`FileText`/`Sparkles`/`ExternalLink`/`Download`/`Trash2` from lucide
 
 ### ProfileForm
 **File:** `components/profile/ProfileForm.tsx`
 **Type:** Client Component (`"use client"` — owns all form state, live completion calc)
-**Pattern:** Orchestrates the whole page below the heading: CompletionIndicator → ResumeUpload → 5 `Section` cards (Personal, Professional, Work Experience, Education, Job Preferences) → right-aligned Save Profile button (inert, feature 06). Uses local non-exported `Section` (card) and `Field` (Label + control) helpers.
+**Pattern:** Orchestrates the whole page below the heading: CompletionIndicator → ResumeUpload → 5 `Section` cards (Personal, Professional, Work Experience, Education, Job Preferences) → footer action row. Footer: left side **Clear** (two-step — swaps to `Cancel` + danger-styled `Confirm Clear`, same destructive-confirm styling as ResumeUpload's delete) and **Restore Previous** (returns to last-saved snapshot); right side **Save Profile** (`saveProfile` Server Action via `useTransition`). Empty form state comes from the shared `blankProfile()` in `lib/blank-profile.ts` (same constructor the profile page uses — never hand-roll an empty Profile). `onExtracted` merges AI-extracted fields into form state.
 **Key classes:**
 - Page stack: `flex flex-col gap-6`
 - `Section` card: `w-full bg-surface border border-border rounded-2xl p-6 flex flex-col gap-5` + card box-shadow; title `text-base font-semibold text-text-primary`
 - `Field`: `flex flex-col gap-1.5` (Label above control)
 - Two-column field grid: `grid grid-cols-1 sm:grid-cols-2 gap-4`
+- Footer row: `flex items-center justify-between`; left group `flex gap-2`; secondary Buttons with `Trash2`/`RotateCcw` icons; danger confirm Button `className="text-error border-error/30 hover:bg-error/10"`
+- Save/error banner: `rounded-lg border px-4 py-3 text-sm font-medium` + `border-success/30 bg-success/10 text-success` or `border-error/30 bg-error/10 text-error`
 **Page container** (`app/profile/page.tsx`): `w-full max-w-3xl mx-auto px-8 py-8 flex flex-col gap-6` (narrower than the 1440px marketing pages — forms read better centered).

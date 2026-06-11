@@ -181,8 +181,9 @@ read via a signed URL — serve it through an authenticated API route that calls
 
 **Rules:**
 
-- No `upsert` option — to replace the base resume, `remove()` the path then `upload()`
-- `upload()` accepts only `File | Blob` — a server-generated PDF Buffer must be wrapped (`new Blob([buffer], { type: "application/pdf" })`)
+- No `upsert` option — overwriting the base resume goes through `overwriteResume()` in `lib/resume-storage.ts` (guarded `remove()` — it THROWS when the file doesn't exist — then `upload()`). Never hand-roll remove+upload at a call site.
+- Bucket name + path come from `RESUME_BUCKET` / `resumePath(userId)` in `lib/resume-storage.ts` — never hardcode `"resumes"` or `` `${userId}/resume.pdf` `` in routes/actions
+- `upload()` accepts only `File | Blob` — a server-generated PDF Buffer must be wrapped (`new Blob([new Uint8Array(buffer)], { type: "application/pdf" })`)
 - Save the returned URL/path back to the DB after upload
 - Never write files to disk — always upload the Blob directly to storage
 
@@ -538,7 +539,7 @@ const response = await openai.chat.completions.create({
 
 ## NVIDIA NIM
 
-Used for AI extraction tasks (feature 07+). Same `openai` npm package, different `baseURL`.
+Used for AI extraction (feature 07) and resume generation (feature 08). Same `openai` npm package, different `baseURL`.
 
 ### Client
 
@@ -552,51 +553,40 @@ export const nim = new OpenAI({
 });
 ```
 
-### Streaming + Reasoning Model
+### Streaming + Reasoning Model — use the shared helper
 
-The Nemotron 3 Ultra model returns two streams: `delta.reasoning_content` (internal chain-of-thought) and `delta.content` (final output). Collect only `delta.content`.
+Reasoning models return two streams: `delta.reasoning_content` (internal chain-of-thought) and `delta.content` (final output). Only `delta.content` matters. All of this plumbing — the `NIMStreamParams` type, the stream-collect loop, and the `<think>` block + code-fence stripping — lives ONCE in `lib/nim-client.ts`. Agent files never reimplement it.
 
 ```typescript
-import OpenAI from "openai";
-import { nim } from "@/lib/nim-client";
-
-// NIM-specific params not in the OpenAI SDK type
-type NIMStreamParams = OpenAI.Chat.ChatCompletionCreateParamsStreaming & {
-  reasoning_budget?: number;
-  chat_template_kwargs?: Record<string, unknown>;
-};
+// In an agent file:
+import { streamNimContent, type NIMStreamParams } from "@/lib/nim-client";
 
 const params: NIMStreamParams = {
-  model: "nvidia/nemotron-3-ultra-550b-a55b",
+  model: NIM_MODEL, // module constant in the agent file
   messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-  temperature: 1,
+  temperature: 0.2,
   top_p: 0.95,
-  max_tokens: 16384,
-  reasoning_budget: 16384,
+  max_tokens: 8192,        // headroom — at 4096 dense resumes risked mid-JSON truncation
+  reasoning_budget: 1024,
   chat_template_kwargs: { enable_thinking: true },
   stream: true,
 };
 
-// Cast required: NIM params extend the standard type; extra fields pass through in the body
-const stream = await nim.chat.completions.create(
-  params as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-);
-
-let content = "";
-for await (const chunk of stream) {
-  content += chunk.choices[0]?.delta?.content ?? "";
-}
-// content now contains the final model output (no reasoning preamble)
+// Returns final content only, already stripped of <think>…</think> and ``` fences —
+// ready for JSON.parse.
+const content = await streamNimContent(params);
+const data = JSON.parse(content);
 ```
 
 **Rules:**
 
 - Always use `stream: true` — the model requires it
-- Collect only `delta.content`, not `delta.reasoning_content`
+- Always call `streamNimContent()` from `lib/nim-client.ts` — never hand-roll the stream loop or fence-stripping in agent files
 - Instruct JSON via system prompt — do not use `response_format: { type: "json_object" }`
-- Always strip markdown code fences defensively before `JSON.parse`
-- NIM client lives in `lib/nim-client.ts` — always import from there
-- Model constant is `"nvidia/nemotron-3-ultra-550b-a55b"` — defined in the agent file that uses it
+- Agent functions log the raw error server-side and return a **friendly** `error` string — never surface provider/parse internals to the client (routes forward `result.error` verbatim)
+- Two model constants, each defined in the agent file that uses it:
+  - **Extraction** (`agent/extractor.ts`) → `"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"` with `enable_thinking: true` + `reasoning_budget: 1024`, `max_tokens: 8192` — parsing a resume benefits from reasoning. The example above is this config.
+  - **Generation** (`agent/resume-generator.ts`) → `"nvidia/nvidia-nemotron-nano-9b-v2"` with thinking disabled — **decision (2026-06-11): the 9b is sufficient for resume-writing quality and faster than the 30b alternative.** Its chat template ignores `chat_template_kwargs`, so the system prompt is prefixed with `/no_think` (that's what the 9b honors); `enable_thinking: false` is kept as a harmless cross-model safeguard.
 
 ---
 
@@ -750,28 +740,42 @@ const ResumePDF = ({ profile }: { profile: Profile }) => (
   </Document>
 )
 
-// Generate buffer
-const buffer = await renderToBuffer(<ResumePDF profile={profile} />)
+// Generate buffer — element construction + rendering live together in
+// lib/resume-pdf.tsx (renderResumePdfBuffer), NOT in the API route. This keeps
+// routes as .ts files and keeps JSX out of try/catch (react-hooks/error-boundaries).
+export function renderResumePdfBuffer(profile: Profile, content: GeneratedResumeContent): Promise<Buffer> {
+  return renderToBuffer(<ResumePDF profile={profile} content={content} />)
+}
 
-// Upload directly to InsForge Storage. v1.3.1 upload() takes File | Blob only
-// (no options, no upsert) — wrap the buffer, and remove() first to overwrite.
-// See the InsForge → Storage section for the full corrected API.
-const blob = new Blob([buffer], { type: 'application/pdf' })
-await insforge.storage.from('resumes').remove(`${userId}/resume.pdf`)
-await insforge.storage.from('resumes').upload(`${userId}/resume.pdf`, blob)
+// Upload via the shared overwrite helper — lib/resume-storage.ts owns the
+// "SDK v1.3.1 has no upsert" workaround (guarded remove(), then upload()).
+// Wrap in Uint8Array: Buffer<ArrayBufferLike> does not satisfy BlobPart.
+const blob = new Blob([new Uint8Array(buffer)], { type: 'application/pdf' })
+const { error } = await overwriteResume(insforge, userId, blob)
 ```
 
-**Supported CSS properties:**
-Only use these — others are silently ignored:
-`padding, margin, fontSize, color, fontFamily, flexDirection, alignItems, justifyContent, borderRadius, width, height, fontWeight, textAlign, lineHeight`
+**Supported CSS properties (verified against @react-pdf/renderer in this project):**
+```
+padding, paddingTop, paddingBottom, paddingHorizontal, paddingVertical
+margin, marginTop, marginBottom, marginRight, marginLeft
+fontSize, fontFamily, fontWeight, color
+lineHeight, textAlign, textTransform, letterSpacing
+flexDirection, flexWrap, flex, alignItems, justifyContent
+width, height, borderRadius
+borderBottom, borderTop, borderLeft, borderRight (shorthand: "0.5pt solid #888888")
+backgroundColor
+```
+Properties outside this list may be silently ignored. When in doubt, test with a real buffer.
+
+**Hex color exemption:** the project-wide "no hardcoded hex" rule applies to UI components consuming the Tailwind `@theme` tokens. PDF templates (`lib/resume-pdf.tsx`) cannot consume CSS variables — literal hex values there are the sanctioned exception, scoped to that file.
 
 **Rules:**
 
 - Server-side only — never import in client components
 - Always use `renderToBuffer` — not `renderToStream` or `PDFDownloadLink`
-- PDF generation only in `app/api/resume/` routes
-- Generated buffer uploaded directly to InsForge Storage — never written to disk
-- Always save public URL to DB after upload
+- PDF rendering is triggered only from `app/api/resume/` routes, via `renderResumePdfBuffer()` in `lib/resume-pdf.tsx` — routes never build PDF JSX/elements themselves (no `React.createElement` + casts in routes)
+- Generated buffer uploaded directly to InsForge Storage via `overwriteResume()` from `lib/resume-storage.ts` — never written to disk, never hand-rolled remove+upload
+- Always save the storage path back to the DB after upload and call `revalidatePath('/profile')`; if the upload fails after the old file was removed, clear `resume_pdf_url` so the DB never points at a missing file
 
 ---
 

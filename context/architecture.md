@@ -63,7 +63,8 @@
 │   ├── adzuna.ts                          → Adzuna API job discovery + GPT-4o scoring
 │   ├── research.ts                        → Company research — Browserbase + Stagehand + GPT-4o
 │   ├── matcher.ts                         → GPT-4o job matching logic
-│   ├── extractor.ts                       → GPT-4o job description extraction + structuring
+│   ├── extractor.ts                       → NIM resume → structured profile extraction
+│   ├── resume-generator.ts                → NIM profile → polished resume content (summary + bullets)
 │   └── types.ts                           → Agent-specific TypeScript types
 ├── actions/
 │   ├── profile.ts                         → Profile save + update
@@ -100,11 +101,17 @@
 ├── lib/
 │   ├── insforge-client.ts                 → InsForge browser client instance
 │   ├── insforge-server.ts                 → InsForge server client
+│   ├── auth.ts                            → getCurrentUser() server helper
 │   ├── browserbase.ts                     → Browserbase session creation + management
 │   ├── stagehand.ts                       → Stagehand initialisation with Browserbase session
 │   ├── adzuna.ts                          → Adzuna API client
+│   ├── nim-client.ts                      → NVIDIA NIM client + NIMStreamParams + streamNimContent()
 │   ├── posthog-client.ts                  → PostHog browser client
 │   ├── posthog-server.ts                  → PostHog server client
+│   ├── profile-completion.ts              → Required-fields list + completion calc (client + server)
+│   ├── blank-profile.ts                   → blankProfile() — single empty-Profile constructor
+│   ├── resume-storage.ts                  → RESUME_BUCKET + resumePath() + overwriteResume() (no-upsert workaround)
+│   ├── resume-pdf.tsx                     → ResumePDF template + renderResumePdfBuffer() (server-only; hex colors exempt from token rule)
 │   └── utils.ts                           → Shared utility functions
 └── types/
     └── index.ts                           → Global TypeScript types
