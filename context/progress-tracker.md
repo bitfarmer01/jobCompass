@@ -7,8 +7,13 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 4 — Job Details Page
-**Last completed:** 12 Job Details Page — Full UI
-**Next:** 13 Company Research Agent
+**Last completed:** 13 Company Research Agent
+**Next:** 14 Dashboard Page — Full UI
+
+> **Project location:** `/Volumes/PortableSSD/mac/aistack` (back on the SSD as of late
+> 2026-06-11 after a brief relocation; the drive was cleaned — 965GB free). Note: the volume
+> is exFAT with 1MB allocation blocks, so node_modules occupies far more on disk than its
+> real size; if the drive ever fills again, `rm -rf node_modules .next` reclaims it fastest.
 
 ---
 
@@ -37,7 +42,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 4 — Job Details Page
 
 - [x] 12 Job Details Page — Full UI
-- [ ] 13 Company Research Agent
+- [x] 13 Company Research Agent
 
 ### Phase 5 — Dashboard
 
@@ -47,6 +52,48 @@ Update this file after every completed feature. Any AI agent reading this should
 - [ ] 17 Analytics Charts — PostHog Data
 
 ---
+
+### Feature 13 — Company Research Agent (2026-06-11)
+
+Browserbase/Stagehand agent researches the employer's website and a NIM synthesis writes a
+9-field dossier to `jobs.company_research`; rendered in the job-details CompanyResearch card.
+`tsc` + lint + `next build` clean; Stagehand extraction and NIM streaming verified LIVE via
+scratch smoke scripts (not committed). Authenticated end-to-end browser run still pending.
+
+- **`agent/researcher.ts`** — `researchCompany(job, profile, userId)`: derive employer homepage
+  (server `fetch` follows the Adzuna redirect → root domain; fallback `www.{company}.com`),
+  single Browserbase session (homepage extract + ≤3 sub-pages ranked about > engineering >
+  product > blog > team > other > careers, same-root-domain only, per-page try/catch),
+  `stagehand.close()` in `finally` BEFORE synthesis. **Always returns a dossier** — browser
+  failure degrades to synthesis-only (logged via `logAgent`, level warning); only a double
+  synthesis failure errors. `dossier.sources` is overwritten with actually-visited URLs.
+- **Stagehand v3 config (hard-won, verified live — see library-docs.md):** `disableAPI: true`
+  required for custom endpoints; model prefix must be `groq/` (OpenAI-compatible chat
+  completions + structured outputs json_schema, which NIM honors — `openai/` 404s on
+  /v1/responses, `togetherai/` sends no schema so the model invents keys); extraction model is
+  the non-reasoning `nvidia/nvidia-nemotron-nano-9b-v2` + `/no_think` (the 30b leaks reasoning
+  into content on this transport); the 30b reasoning model stays on dossier synthesis.
+- **`app/api/agent/research/route.ts`** — POST {jobId}; mirrors the find route (401/422/404,
+  `[api/agent/research]` logging, `{success:false,error}` shape); reuses `getJobById`
+  (user-scoped); persists user-scoped update; fire-and-forget `logAgent` success row + PostHog
+  `company_researched` {userId, jobId, company}. No `maxDuration` (library-docs rule).
+- **`lib/browserbase.ts`** (client factory, 120s session) / **`lib/dossier.ts`** (`toDossier`
+  jsonb→`CompanyDossier|null` normalizer, shared by page render and synthesis — single source
+  of truth) / **`types/index.ts`** `CompanyDossier` / **`lib/agent-logs.ts`** `runId` widened
+  to `string | null` (DB column is nullable).
+- **`components/job-details/CompanyResearch.tsx`** — now a Client Component: empty state +
+  wired button → loading state (1–3 min copy, `role="status"`) → `router.refresh()` renders
+  all 9 dossier sections (see ui-registry); error banner mirrors SearchControls.
+- **`lib/nim-client.ts` (merge fix):** the raw-fetch SSE parser now buffers partial lines
+  across network chunks (a split `data:` event would have crashed `JSON.parse`). Known edge,
+  verified live: on trivial prompts the 30b can finish entirely inside `reasoning_content`
+  leaving `content` empty (→ parse failure → researcher retries once). Realistic synthesis
+  prompts return clean JSON in `content`.
+- **Slim-deps refactor merged** (parallel work, adopted): local `components/icons` barrel
+  replaces `lucide-react`; `openai` SDK dropped (raw-fetch NIM client); deps re-added for this
+  feature: `@browserbasehq/stagehand@^3.5.0`, `@browserbasehq/sdk@^2.14.0`, `zod@^4.4.3`.
+- **Env:** `.env.local` key renamed `BROSWERBASE_ID` → `BROWSERBASE_PROJECT_ID` (typo fix);
+  code reads only `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`.
 
 ### Feature 04 — Database Schema (2026-06-09)
 

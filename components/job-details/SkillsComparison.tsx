@@ -1,4 +1,4 @@
-import { Check, ListChecks } from "lucide-react";
+import { Check, ListChecks } from "@/components/icons";
 
 type Props = {
   matched: string[];

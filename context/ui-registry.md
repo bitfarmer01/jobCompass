@@ -320,10 +320,19 @@ Components. The page passes `applyUrl = external_apply_url ?? source_url` into J
 - Matched (You have): `inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-success-lightest text-success-foreground` + `Check w-3 h-3`
 - Missing (Skills to develop): `... bg-warning/10 text-warning` (no icon) — warning-orange per build-plan "red/orange badges". Both groups conditional; "No skill data" when both empty.
 
-### CompanyResearch
+### CompanyResearch (feature 13 — Client Component, dossier renderer)
 **File:** `components/job-details/CompanyResearch.tsx`
-- Section `rounded-xl border border-border p-5`; header row `flex items-center justify-between gap-3`: `Building2 w-4 h-4 text-accent` + `h2 text-base font-semibold text-text-primary` + `<Button variant="default" size="sm">` with `Search` (wired in feature 13)
+- `"use client"`; props `{ jobId, company, research: CompanyDossier | null }` — the server page passes `research={toDossier(job.company_research)}` (`lib/dossier.ts`)
+- Section `rounded-xl border border-border p-5`; header row `flex items-center justify-between gap-3`: `Building2 w-4 h-4 text-accent` + `h2 text-base font-semibold text-text-primary`; Research button only when no dossier: `<Button variant="default" size="sm">` — idle `Search` + "Research Company", busy `Loader2 animate-spin` + "Researching…" + disabled
 - Empty state: `flex flex-col items-center text-center gap-2 py-8`; icon disc `w-12 h-12 rounded-full bg-surface-secondary` + `Building2 w-5 h-5 text-text-muted`; title `text-sm font-medium text-text-primary`; sub `text-sm text-text-muted max-w-sm`
+- **Loading state** (long request, 1–3 min): same empty-state layout but `Loader2 w-5 h-5 text-accent animate-spin` in the disc, `role="status" aria-live="polite"`, copy warns "this can take a couple of minutes"
+- **Dossier sections** (`flex flex-col gap-5`, each section h3 `text-xs font-medium text-text-secondary uppercase tracking-wide mb-1.5`; empty sections skipped entirely):
+  - `Paragraph` (Company Overview, Why This Role): body `text-sm leading-relaxed text-text-dark`
+  - `TagList` (Tech Stack): pills `inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-accent-muted text-accent`
+  - `BulletList` (Culture, Your Edge, Gaps to Address, Smart Questions, Interview Prep): `ul flex flex-col gap-1.5`, li `text-sm leading-relaxed text-text-dark flex gap-2` with `•` `text-accent`; **highlight variant** (Your Edge only): wrapper `rounded-lg border border-accent/30 bg-accent/5 p-4`
+  - `Sources`: `flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 border-t border-border-light`; links `text-xs text-text-muted hover:text-accent` + `ExternalLink w-3 h-3`, protocol stripped from display text
+- Error banner (mirrors SearchControls): `role="alert"` + `border-error/30 bg-error/10` + `TriangleAlert text-error` + message `text-sm font-medium text-error`
+- Mutation pattern: POST `/api/agent/research` `{jobId}` → on success `router.refresh()` (server page re-reads the job row); error → banner; `isResearching` guard
 
 ### ApplyBar
 **File:** `components/job-details/ApplyBar.tsx`

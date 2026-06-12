@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
-import { Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Save, Trash2 } from "@/components/icons";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

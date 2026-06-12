@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Sparkles, Target, MessageSquare } from "lucide-react";
+import { Sparkles, Target, MessageSquare } from "@/components/icons";
 
 const features = [
   {

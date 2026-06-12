@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Search, Sparkles, TriangleAlert } from "lucide-react";
+import { Loader2, Search, Sparkles, TriangleAlert } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 

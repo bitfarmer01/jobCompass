@@ -99,6 +99,21 @@ export type Job = {
 // later from the research agent (feature 13).
 export type JobInsert = Omit<Job, "id" | "company_research">;
 
+// Output of agent/researcher.ts (feature 13) — the structured dossier saved to
+// jobs.company_research (jsonb). Shape per build-plan §13; `sources` is always
+// set programmatically to the URLs actually visited, never model output.
+export type CompanyDossier = {
+  companyOverview: string;
+  techStack: string[];
+  culture: string[];
+  whyThisRole: string;
+  yourEdge: string[];
+  gapsToAddress: string[];
+  smartQuestions: string[];
+  interviewPrep: string[];
+  sources: string[];
+};
+
 // Output of agent/matcher.ts — one NIM scoring call per discovered job.
 export type JobScore = {
   matchScore: number;

@@ -3,7 +3,7 @@ import { createInsforgeServer } from "@/lib/insforge-server";
 export type AgentLogLevel = "info" | "success" | "warning" | "error";
 
 export type AgentLogEntry = {
-  runId: string;
+  runId: string | null; // nullable in the DB — url-sourced jobs and research runs have no agent_run
   userId: string;
   message: string; // human readable — feeds the dashboard recent-activity feed
   level: AgentLogLevel;

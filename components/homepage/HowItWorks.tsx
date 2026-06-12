@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Target, Building2, LayoutDashboard } from "lucide-react";
+import { Target, Building2, LayoutDashboard } from "@/components/icons";
 
 const features = [
   {

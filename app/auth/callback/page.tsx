@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Compass } from "lucide-react";
+import { Compass } from "@/components/icons";
 import { posthog } from "@/lib/posthog-client";
 
 // No insforge import: SDK auto-exchange stores tokens in memory only — proxy can't read them.

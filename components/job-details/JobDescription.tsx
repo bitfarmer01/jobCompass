@@ -1,4 +1,4 @@
-import { ExternalLink, FileText } from "lucide-react";
+import { ExternalLink, FileText } from "@/components/icons";
 
 type Props = {
   text: string | null;
