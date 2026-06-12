@@ -99,10 +99,17 @@ export type Job = {
 // later from the research agent (feature 13).
 export type JobInsert = Omit<Job, "id" | "company_research">;
 
+// Honest fit verdict for the dossier's Fit & Strategy tab. "" = legacy dossier
+// saved before the field existed → UI hides the verdict.
+export type FitLevel = "strong" | "moderate" | "stretch" | "";
+
 // Output of agent/researcher.ts (feature 13) — the structured dossier saved to
-// jobs.company_research (jsonb). Shape per build-plan §13; `sources` is always
-// set programmatically to the URLs actually visited, never model output.
+// jobs.company_research (jsonb). Shape per build-plan §13 plus the honest-fit
+// verdict; `sources` is always set programmatically to the URLs actually
+// visited, never model output.
 export type CompanyDossier = {
+  fitLevel: FitLevel;
+  fitSummary: string;
   companyOverview: string;
   techStack: string[];
   culture: string[];

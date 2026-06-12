@@ -303,6 +303,24 @@ Rules:
   ground everything in the job posting alone. Otherwise set it to true.
 - Be specific to THIS candidate. Connect their actual skills and past work to this
   company's stack, product, and values. No generic advice that would apply to anyone.
+- HONEST FIT — this is the most important rule. Judge the fit candidly from the match
+  score, matched/missing skills, and the candidate's real profile:
+  - "fitLevel": "strong" (clearly qualified), "moderate" (real overlap with real gaps),
+    or "stretch" (the core requirements are missing today).
+  - "fitSummary": 2-3 plain, kind sentences a trusted mentor would say. State the real
+    picture. For a stretch fit, name the core gap outright, say what would change the
+    picture (specific skills or experience to build), and whether applying now is worth
+    their time — it is fine to say this role is probably not the best use of their
+    effort right now. Encouraging tone, zero false hope.
+- NEVER manufacture connections. Unrelated experience does not "apply to" or
+  "complement" a role just because both involve software. If a claimed edge would not
+  survive a hiring manager's first question, it is not an edge.
+- "yourEdge": ONLY genuine, role-relevant advantages. If the candidate has no real edge
+  for this role, return an empty array — an empty section is honest; a fabricated one
+  costs the candidate an interview embarrassment.
+- "whyThisRole": what this role honestly offers THIS candidate (growth, exposure,
+  alignment with their goals) — not a sales pitch. For a stretch fit, be frank about
+  what pursuing it would actually involve.
 - Turn the candidate's missing skills into a strategy: how to frame the gap honestly
   and what adjacent experience to lean on.
 - Talking points and questions must reference real things from the research, the kind
@@ -312,6 +330,8 @@ Rules:
 Return ONLY valid JSON matching this exact shape:
 {
   "usedWebsiteResearch": boolean,
+  "fitLevel": "strong" | "moderate" | "stretch",
+  "fitSummary": "string",
   "companyOverview": "string",
   "techStack": ["string"],
   "culture": ["string"],
@@ -340,6 +360,8 @@ JOB POSTING:
 Title: ${job.title ?? "Not specified"}
 Company: ${job.company ?? "Not specified"}
 Description: ${job.about_role ?? "Not provided"}
+Match Score (0-100, from the matching engine): ${job.match_score ?? "Not scored"}
+Match Assessment: ${job.match_reason ?? "None recorded"}
 Matched skills (candidate has): ${job.matched_skills.join(", ") || "None recorded"}
 Missing skills (candidate lacks): ${job.missing_skills.join(", ") || "None recorded"}
 

@@ -53,6 +53,39 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ---
 
+### Honest fit verdict in the dossier (2026-06-11)
+
+The Fit & Strategy content was sycophantic — the first live dossier told a 10%-match
+candidate their "leadership experience as a boss demonstrates ability to guide trading
+teams". The dossier now tells the truth, palatably. **Live-verified on both real jobs.**
+
+- **`CompanyDossier` gained `fitLevel` (`"strong" | "moderate" | "stretch" | ""`) and
+  `fitSummary`** (`types/index.ts`); `toDossier` whitelists the level — anything else
+  (incl. legacy dossiers) → `""` and the UI hides the verdict (`lib/dossier.ts`).
+- **Synthesis prompt honesty rules** (`agent/researcher.ts`): fit judged from the match
+  score + matched/missing skills (now passed in the JOB POSTING block); "NEVER manufacture
+  connections"; `yourEdge` must be empty rather than fabricated ("if a claimed edge would
+  not survive a hiring manager's first question, it is not an edge"); `fitSummary` = what
+  a trusted mentor would say — for stretch fits it names the core gap, what would change
+  the picture, and whether applying now is worth the effort.
+- **`FitVerdict` banner** leads the Fit & Strategy tab (`CompanyResearch.tsx`): Strong Fit
+  (success palette) / Moderate Fit (info) / Stretch Role (warning), rendering `fitSummary`.
+- **Live results:** Blockhouse 10% match → `stretch`, "requires Rust engineering and trading
+  systems expertise that you do not possess", `yourEdge: []` (the fabricated edge is gone),
+  9.7s. BlackRock 72% → `moderate`, credits real AI alignment while naming the Rust gap,
+  genuine edges only, 6.7s.
+
+### Company Research Visual Redesign (2026-06-11)
+
+Polished and upgraded the visual representation of the Company Research Agent dossier inside `/find-jobs/[id]`.
+
+- **iOS-Style Switcher**: Added an interactive segmented tab selector that divides the 9 dossier fields into logical groupings: *Overview & Stack*, *Fit & Strategy*, and *Interview Prep*.
+- **Spotlight Cards**: Styled specialized spotlight cards for *Your Edge* (green tint and glow), *Gaps to Address* (coaching target list), *Why This Role* (bold editorial italic layout), and *Smart Questions* (speech card containers).
+- **Simulated Progress Loader**: Replaced the simple loader with a full status timeline ticker cycling through actual crawl/synthesis phases, complemented by a smooth animated progress bar filling up dynamically.
+- **Micro-interactions**: Enhanced card layouts, tag layouts, and hover animations, passing TypeScript compilation and ESLint audits cleanly.
+
+---
+
 ### Feature 13 revision — fetch-first research, identity guard, parse hardening (2026-06-11, post live run)
 
 The first authenticated run exposed three defects; the research pipeline was redesigned and

@@ -320,19 +320,30 @@ Components. The page passes `applyUrl = external_apply_url ?? source_url` into J
 - Matched (You have): `inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-success-lightest text-success-foreground` + `Check w-3 h-3`
 - Missing (Skills to develop): `... bg-warning/10 text-warning` (no icon) — warning-orange per build-plan "red/orange badges". Both groups conditional; "No skill data" when both empty.
 
-### CompanyResearch (feature 13 — Client Component, dossier renderer)
+### CompanyResearch (feature 13 — Client Component, dossier renderer — Redesigned 2026-06-11)
 **File:** `components/job-details/CompanyResearch.tsx`
 - `"use client"`; props `{ jobId, company, research: CompanyDossier | null }` — the server page passes `research={toDossier(job.company_research)}` (`lib/dossier.ts`)
-- Section `rounded-xl border border-border p-5`; header row `flex items-center justify-between gap-3`: `Building2 w-4 h-4 text-accent` + `h2 text-base font-semibold text-text-primary`; Research button only when no dossier: `<Button variant="default" size="sm">` — idle `Search` + "Research Company", busy `Loader2 animate-spin` + "Researching…" + disabled
-- Empty state: `flex flex-col items-center text-center gap-2 py-8`; icon disc `w-12 h-12 rounded-full bg-surface-secondary` + `Building2 w-5 h-5 text-text-muted`; title `text-sm font-medium text-text-primary`; sub `text-sm text-text-muted max-w-sm`
-- **Loading state** (~10–60s request): same empty-state layout but `Loader2 w-5 h-5 text-accent animate-spin` in the disc, `role="status" aria-live="polite"`, copy says "usually done in under a minute"
-- **Dossier sections** (`flex flex-col gap-5`, each section h3 `text-xs font-medium text-text-secondary uppercase tracking-wide mb-1.5`; empty sections skipped entirely):
-  - `Paragraph` (Company Overview, Why This Role): body `text-sm leading-relaxed text-text-dark`
-  - `TagList` (Tech Stack): pills `inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-accent-muted text-accent`
-  - `BulletList` (Culture, Your Edge, Gaps to Address, Smart Questions, Interview Prep): `ul flex flex-col gap-1.5`, li `text-sm leading-relaxed text-text-dark flex gap-2` with `•` `text-accent`; **highlight variant** (Your Edge only): wrapper `rounded-lg border border-accent/30 bg-accent/5 p-4`
-  - `Sources`: `flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 border-t border-border-light`; links `text-xs text-text-muted hover:text-accent` + `ExternalLink w-3 h-3`, protocol stripped from display text
-- Error banner (mirrors SearchControls): `role="alert"` + `border-error/30 bg-error/10` + `TriangleAlert text-error` + message `text-sm font-medium text-error`
-- Mutation pattern: POST `/api/agent/research` `{jobId}` → on success `router.refresh()` (server page re-reads the job row); error → banner; `isResearching` guard
+- Section `rounded-xl border border-border p-6 bg-surface shadow-sm`; header row features a modern `Building2` logo, title, and "Research Company" or "Researching..." button aligned.
+- **Tab Swapping**:
+  - Segment switcher (`bg-surface-secondary p-1 rounded-lg flex gap-1 border border-border w-full`) hosting 3 segmented tabs:
+    - **Overview & Stack**: Displays `About Company` paragraph, `Tech Stack` chips, `Culture` check grid, and `Sources` footer links.
+    - **Fit & Strategy**: Leads with `FitVerdict` (honest fit banner), then `Your Edge` (spotlight green-tint card — empty array = section hidden, never fabricated), `Why This Role` callout, and `Gaps to Address` coaching card.
+    - **Interview Prep**: Displays `Interview Prep` (numbered checklist boxes) and `Smart Questions` (speech-bubble themed cards).
+- **Sub-Component Styling**:
+  - `FitVerdict` (honest fit banner, top of Fit & Strategy): `rounded-xl border p-5` + level palette — strong `border-success/20 bg-success-lightest/40` + `text-success-darker` + `Check` ("Strong Fit"); moderate `border-info/20 bg-info-lightest` + `text-info-dark` + `Target` ("Moderate Fit"); stretch `border-warning/20 bg-warning/5` + `text-warning` + `Compass` ("Stretch Role"). Renders `dossier.fitSummary` (2-3 plain-spoken sentences); hidden when `fitLevel` is `""` (legacy dossiers).
+  - `WhyThisRoleBlock`: Placed inside a quotes callout card with thick left border (`relative pl-5 border-l-4 border-accent bg-accent-muted/30 py-3.5`).
+  - `GapsCoaching` (Gaps to Address): coaching board (`rounded-xl border border-warning/20 bg-warning/5 p-5 relative`) utilizing target bullet marks.
+  - `TechStackChips`: Tag chips (`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-accent-muted text-accent border border-accent/10`).
+  - `CultureGrid`: Clean values grid (`grid grid-cols-1 md:grid-cols-2 gap-3`) featuring check marks.
+  - `InterviewPrepChecklist`: Visual list checklist (`flex gap-3 p-3.5 rounded-lg border border-border bg-surface-secondary`) featuring step-by-step numbers.
+  - `SmartQuestionsSpeech`: Grid items styled as interactive speech cards (`flex gap-3 p-4 rounded-xl border border-accent/20 bg-accent-muted/10 relative`) with `MessageSquare` icons.
+  - `SourcesFooter`: Clean bottom list stripping `https://` / `www.` protocols.
+- **Empty state:** Modern visual box (`flex flex-col items-center text-center gap-4 py-10 px-4 rounded-xl bg-surface-secondary/40 border border-dashed border-border hover:bg-surface-secondary/60 hover:border-accent/30 transition-all duration-300`) with hover transitions and Build Dossier CTA.
+- **Loading state:** Fully stylized timeline tracker card (`role="status" bg-surface-secondary rounded-xl border border-dashed border-border p-12`) featuring:
+  - Stylized loading disk (`w-16 h-16 rounded-full bg-accent-muted flex items-center justify-center relative shadow-sm border border-accent/10`) with a spinning loader and pulse ring.
+  - Timed simulated progress ticker (`loadingSteps` list from Launching secure browser to Assembling candidate dossier) cycling every 4 seconds.
+  - Progress bar (`w-full max-w-xs h-2 bg-border-light rounded-full overflow-hidden relative shadow-inner`) animating widths matching step status.
+- Mutation pattern: POST `/api/agent/research` `{jobId}` → on success `router.refresh()` (server page re-reads the job row); error → banner; `isResearching` guard.
 
 ### ApplyBar
 **File:** `components/job-details/ApplyBar.tsx`

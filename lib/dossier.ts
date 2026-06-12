@@ -1,4 +1,4 @@
-import type { CompanyDossier } from "@/types";
+import type { CompanyDossier, FitLevel } from "@/types";
 
 // Forces unknown jsonb content into a string array — mirrors the defensive
 // normalization in agent/matcher.ts so sloppy model output never renders badly.
@@ -13,6 +13,12 @@ function toText(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
+// Whitelist — anything else (including legacy dossiers without the field)
+// becomes "" and the UI hides the verdict rather than showing a wrong one.
+function toFitLevel(v: unknown): FitLevel {
+  return v === "strong" || v === "moderate" || v === "stretch" ? v : "";
+}
+
 // Normalizes the jobs.company_research jsonb blob into a renderable dossier.
 // Returns null when the blob isn't one (missing, malformed, or empty overview)
 // — null is the "no research yet" signal for the UI. Also doubles as the
@@ -24,6 +30,8 @@ export function toDossier(
   if (!value || typeof value !== "object") return null;
 
   const dossier: CompanyDossier = {
+    fitLevel: toFitLevel(value.fitLevel),
+    fitSummary: toText(value.fitSummary),
     companyOverview: toText(value.companyOverview),
     techStack: toStrings(value.techStack),
     culture: toStrings(value.culture),
