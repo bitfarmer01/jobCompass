@@ -10,9 +10,10 @@ Update this file after every completed feature. Any AI agent reading this should
 **Last completed:** 13 Company Research Agent
 **Next:** 14 Dashboard Page — Full UI
 
-> **Project location (2026-06-11):** the working tree moved to `~/dev/aistack` (internal
-> APFS disk). Do NOT work in `/Volumes/PortableSSD/mac/aistack` — that exFAT volume uses
-> 1MB allocation blocks, so node_modules (~84k files) consumed 430GB and filled the drive.
+> **Project location:** `/Volumes/PortableSSD/mac/aistack` (back on the SSD as of late
+> 2026-06-11 after a brief relocation; the drive was cleaned — 965GB free). Note: the volume
+> is exFAT with 1MB allocation blocks, so node_modules occupies far more on disk than its
+> real size; if the drive ever fills again, `rm -rf node_modules .next` reclaims it fastest.
 
 ---
 
