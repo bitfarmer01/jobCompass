@@ -271,6 +271,24 @@ export function UploadCloud(props: IconProps) {
   );
 }
 
+export function TrendingUp(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 7h6v6" />
+      <path d="m22 7-8.5 8.5-5-5L2 17" />
+    </Icon>
+  );
+}
+
+export function TrendingDown(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 17h6v-6" />
+      <path d="m22 17-8.5-8.5-5 5L2 7" />
+    </Icon>
+  );
+}
+
 export function X(props: IconProps) {
   return <Icon {...props}><path d="M18 6 6 18" /><path d="m6 6 12 12" /></Icon>;
 }
