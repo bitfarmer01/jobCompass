@@ -29,11 +29,11 @@ export function formatRelativeTime(iso: string): string {
   });
 }
 
-// Match-score text color by the canonical thresholds (ui-tokens.md → Match
+// Match-score badge classes by the canonical thresholds (ui-tokens.md → Match
 // Score Colors). Keeps the job details header badge consistent with the bar
 // color used in the jobs table. ≥90 green, ≥75 blue, below 75 orange.
-export function scoreTextClass(score: number): string {
-  if (score >= 90) return "text-success";
-  if (score >= 75) return "text-info-medium";
-  return "text-warning";
+export function scoreBadgeClass(score: number): string {
+  if (score >= 90) return "bg-success-lightest text-success-foreground";
+  if (score >= 75) return "bg-info-lightest text-info-foreground";
+  return "bg-warning/10 text-warning";
 }

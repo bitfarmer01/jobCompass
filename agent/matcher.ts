@@ -35,6 +35,16 @@ function keywordHit(haystack: string, term: string): boolean {
   return new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`).test(haystack);
 }
 
+// Joins matched-skill names into a natural, user-facing list ("A", "A and B",
+// "A, B, and C"). Skill text is kept exactly as the candidate typed it — casing
+// is their own profile data and normalizing all-caps would corrupt real
+// acronyms (AWS, C#, iOS).
+function listSkills(skills: string[]): string {
+  if (skills.length === 1) return skills[0];
+  if (skills.length === 2) return `${skills[0]} and ${skills[1]}`;
+  return `${skills.slice(0, -1).join(", ")}, and ${skills[skills.length - 1]}`;
+}
+
 // Attempts a deterministic score. Returns null when the match is NOT an exact
 // keyword match (no skills to match on, no title alignment, or no skill keyword
 // present in the listing) — that null is the signal to fall back to the LLM.
@@ -68,9 +78,10 @@ export function keywordScore(
   return {
     matchScore,
     matchReason:
-      `Exact keyword match — this role's title aligns with the titles you're ` +
-      `targeting and the listing names ${matchedSkills.length} of your ` +
-      `skills (${matchedSkills.join(", ")}). Scored deterministically without AI.`,
+      `This role looks like a strong fit for your profile. The title lines up with ` +
+      `the kind of roles you're targeting, and the listing calls out ` +
+      `${matchedSkills.length === 1 ? "one of your skills" : `${matchedSkills.length} of your skills`} — ` +
+      `${listSkills(matchedSkills)}.`,
     matchedSkills,
     // Unknowable from a search snippet without the full job description — left
     // empty rather than guessed. The LLM path fills this in when it runs.

@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 3 — Find Jobs Page
-**Last completed:** 11 Filter + Sort + Pagination
-**Next:** 12 Job Details Page — Full UI
+**Phase:** Phase 4 — Job Details Page
+**Last completed:** 12 Job Details Page — Full UI
+**Next:** 13 Company Research Agent
 
 ---
 
@@ -36,7 +36,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 4 — Job Details Page
 
-- [ ] 12 Job Details Page — Full UI
+- [x] 12 Job Details Page — Full UI
 - [ ] 13 Company Research Agent
 
 ### Phase 5 — Dashboard
@@ -62,6 +62,16 @@ Four tables + RLS created via InsForge MCP `run-raw-sql` (no app code). Matches 
 - **Storage `resumes` bucket DEFERRED to feature 07/08** — `architecture.md` ("authenticated, own files only") conflicts with `library-docs.md`'s `getPublicUrl()` pattern (needs a public bucket; the `resumes/{user_id}/resume.pdf` path is guessable → a public bucket leaks PII). Private-bucket + `createSignedUrl()` vs public is decided when the resume read pattern actually exists. See note in `library-docs.md`.
 - **`run-raw-sql` rejects `BEGIN/COMMIT`** (transaction control not allowed) — it wraps the batch itself; send plain multi-statement DDL.
 
+### Feature 12 — Job Details Page (2026-06-11)
+
+Full job-details view at `/find-jobs/[id]`, wired to the real `jobs` row (no mock data). `tsc` clean; ui-registry imprinted (see "Job Details Components (feature 12)").
+
+- **`app/find-jobs/[id]/page.tsx`** — async Server Component; `getJobById(id)` → `notFound()` when missing/not owned. Renders the detail card stack + back link.
+- **`components/job-details/`** (7 components, all presentational): `JobHeader` (title/company/score pill badge — "No match score" when null/View Job Post), `JobInfoCards` (salary/location/type/date found), `MatchReasoning` (match_reason paragraph), `SkillsComparison` (matched green / missing warning-orange badges), `JobDescription` (about_role + source link), `CompanyResearch` (empty state only — Research button wired to POST `/api/agent/research` in feature 13), `ApplyBar` (apply link, new tab).
+- **`lib/jobs.ts`** — added `getJobById(id)`: user-scoped single-job read, `Job | null`, resilient try/catch (same pattern as `getUserJobs`).
+- Apply target = `job.external_apply_url ?? job.source_url`.
+- The matcher `match_reason` copy fix + 14-row backfill (logged under the Scoring revision entry below) was surfaced by this feature's MatchReasoning section.
+
 ### Scoring revision — Keyword-first, LLM fallback (2026-06-11)
 
 Revisits feature 10's matcher: a deterministic keyword layer now runs FIRST; the NIM reasoning model only scores jobs the keyword layer can't resolve. Cheaper (fewer LLM calls), stable/repeatable on the common case, and reserves the model for genuinely ambiguous jobs. `tsc` clean; keyword logic validated against symbol-skill and word-boundary edge cases.
@@ -72,6 +82,7 @@ Revisits feature 10's matcher: a deterministic keyword layer now runs FIRST; the
   - **Score formula** — `60 (title base) + min(40, matchedCount×12)` → 1 skill = 72, 2 = 84, 3 = 96, 4+ = 100 (all ≥70 "High"). A coverage *ratio* was deliberately avoided — it punishes Adzuna's one-line snippets. `missingSkills: []` on this path (unknowable from a snippet without the full JD; documented).
 - **`agent/adzuna.ts`** — `discoverJobs` passes its `jobTitle` into `scoreJob` so the keyword layer has the searched title for alignment.
 - **Open items from the prior scoring review (NOT addressed here):** profile breadth (work_experience/remote/salary still unused by the LLM path), batched/calibrated LLM scoring, robust JSON-extraction + per-call timeout, re-scoring on the full JD. Tracked for a follow-up.
+- **Copy fix (2026-06-11, surfaced by feature 12):** the keyword path's `match_reason` exposed internal jargon and contradicted the "AI Match Reasoning" heading ("Exact keyword match… Scored deterministically without AI."). Rewritten in `agent/matcher.ts` to natural user-facing copy via a `listSkills` helper (singular/plural + "A, B, and C" join; matched-skill casing left as the user typed it — normalizing all-caps would corrupt acronyms). Because `match_reason` is persisted at discovery time, the 14 existing legacy rows were **backfilled** via `run-raw-sql`, rebuilt from the structured `matched_skills` column (0 legacy rows remain). The LLM path's reason was already clean — unchanged.
 
 ### Feature 11 — Filter + Sort + Pagination (2026-06-11)
 

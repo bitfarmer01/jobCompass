@@ -280,3 +280,51 @@ All under `components/find-jobs/`. Page (`app/find-jobs/page.tsx`) is a Server C
 - Summary: `text-sm text-text-secondary`; bold spans `font-medium text-text-primary`
 - Buttons: `Button size="sm"` with `variant="default"` (active) or `variant="outline"` (inactive/prev/next)
 - Ellipsis: `px-2 text-sm text-text-muted`
+
+---
+
+## Job Details Components (feature 12)
+
+All under `components/job-details/`. Page (`app/find-jobs/[id]/page.tsx`) is a Server Component using
+`w-full max-w-3xl mx-auto px-8 py-8 flex flex-col gap-5`. A Back-to-Jobs `Link` sits above one outer
+white card (`bg-surface border border-border rounded-2xl` + standard card shadow, `p-6 flex flex-col gap-5`)
+that holds the header + info tiles + four sub-sections; the full-width Apply bar sits below the card.
+Sub-sections are inset bordered cards (`rounded-xl border border-border p-5`). All presentational Server
+Components. The page passes `applyUrl = external_apply_url ?? source_url` into JobHeader/ApplyBar/JobDescription.
+
+### JobHeader
+**File:** `components/job-details/JobHeader.tsx`
+- Wrapper: `flex items-start justify-between gap-4 border-b border-border pb-5`
+- Logo box: `w-12 h-12 rounded-xl bg-surface-secondary border border-border` + `Building2 w-6 h-6 text-text-muted`
+- Title: `text-2xl font-bold text-text-primary leading-tight`; meta row `flex items-center gap-2 text-sm` — company `text-text-secondary truncate`, `•` `text-text-muted`, score as pill badge `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium` + `scoreBadgeClass(score)` (from `lib/utils`: ≥90 `bg-success-lightest text-success-foreground`, ≥75 `bg-info-lightest text-info-foreground`, else `bg-warning/10 text-warning`); null score → `text-text-muted` "No match score"
+- View Job Post: `<Button asChild variant="secondary">` wrapping `<a target="_blank" rel="noopener noreferrer">` + `ExternalLink`; disabled `<Button>` when no url
+
+### JobInfoCards
+**File:** `components/job-details/JobInfoCards.tsx`
+- Grid: `grid grid-cols-2 sm:grid-cols-4 gap-3`; tile `flex items-center gap-3 rounded-xl border border-border p-3`
+- Icon tile: `w-9 h-9 rounded-lg bg-accent-muted` + icon `w-4 h-4 text-accent` (`DollarSign`/`MapPin`/`Briefcase`/`Calendar`)
+- Value: `text-sm font-semibold text-text-primary truncate`; label `text-xs font-medium text-text-secondary uppercase tracking-wide` (Salary Est./Location/Job Type/Date Found; `job_type` humanized, date via `formatRelativeTime`, nulls → "—")
+
+### MatchReasoning / JobDescription
+**Files:** `components/job-details/MatchReasoning.tsx`, `JobDescription.tsx`
+- Section: `rounded-xl border border-border p-5`
+- Reasoning header (uppercase): `Sparkles w-4 h-4 text-accent` + `h2 text-xs font-medium text-text-secondary uppercase tracking-wide`
+- Description header (title-case): `FileText w-4 h-4 text-accent` + `h2 text-base font-semibold text-text-primary`
+- Body paragraph: `text-sm leading-relaxed text-text-dark` (Description adds `whitespace-pre-line`); both have an empty-state fallback when the field is null
+- **Read-more link (JobDescription):** Adzuna stores only a ~500-char snippet ending in "…". When truncated (`/(?:…|\.\.\.)\s*$/`) and a `sourceUrl` exists, an external link renders below the paragraph: `mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:text-accent-dark` + `ExternalLink w-4 h-4`, text "Read the full description on the original posting". Props: `text`, `sourceUrl`.
+
+### SkillsComparison
+**File:** `components/job-details/SkillsComparison.tsx`
+- Section `rounded-xl border border-border p-5`; header `ListChecks w-4 h-4 text-accent` + uppercase label
+- Group label `text-xs text-text-muted mb-2`; badges `flex flex-wrap gap-2`
+- Matched (You have): `inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-success-lightest text-success-foreground` + `Check w-3 h-3`
+- Missing (Skills to develop): `... bg-warning/10 text-warning` (no icon) — warning-orange per build-plan "red/orange badges". Both groups conditional; "No skill data" when both empty.
+
+### CompanyResearch
+**File:** `components/job-details/CompanyResearch.tsx`
+- Section `rounded-xl border border-border p-5`; header row `flex items-center justify-between gap-3`: `Building2 w-4 h-4 text-accent` + `h2 text-base font-semibold text-text-primary` + `<Button variant="default" size="sm">` with `Search` (wired in feature 13)
+- Empty state: `flex flex-col items-center text-center gap-2 py-8`; icon disc `w-12 h-12 rounded-full bg-surface-secondary` + `Building2 w-5 h-5 text-text-muted`; title `text-sm font-medium text-text-primary`; sub `text-sm text-text-muted max-w-sm`
+
+### ApplyBar
+**File:** `components/job-details/ApplyBar.tsx`
+- `<Button asChild variant="default" size="lg" className="w-full">` wrapping `<a target="_blank" rel="noopener noreferrer">`; disabled `<Button>` when no url
