@@ -329,6 +329,7 @@ Approved dependencies for this project:
 - `@react-pdf/renderer` — Resume PDF generation
 - `pdf-parse` — Extract text from uploaded PDF
 - `zod` — Schema validation
+- `recharts` — Dashboard charts (feature 14). Client-only (`"use client"`); hex color props are the sanctioned exception to the no-hex rule (the library can't read `@theme` tokens) — values come from ui-tokens.md "Dashboard Chart Colors". See library-docs.md.
 - `lucide-react` — Icons
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives

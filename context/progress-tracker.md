@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 4 — Job Details Page
-**Last completed:** 13 Company Research Agent
-**Next:** 14 Dashboard Page — Full UI
+**Phase:** Phase 5 — Dashboard (complete)
+**Last completed:** 17 Analytics Charts — PostHog Data
+**Next:** — (build plan complete through Phase 5)
 
 > **Project location:** `/Volumes/PortableSSD/mac/aistack` (back on the SSD as of late
 > 2026-06-11 after a brief relocation; the drive was cleaned — 965GB free). Note: the volume
@@ -46,12 +46,125 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 5 — Dashboard
 
-- [ ] 14 Dashboard Page — Full UI
-- [ ] 15 Stats Bar — Real Data
-- [ ] 16 Recent Activity — Real Data
-- [ ] 17 Analytics Charts — PostHog Data
+- [x] 14 Dashboard Page — Full UI
+- [x] 15 Stats Bar — Real Data
+- [x] 16 Recent Activity — Real Data
+- [x] 17 Analytics Charts — PostHog Data
 
 ---
+
+### Feature 17 — Analytics Charts (2026-06-12)
+
+- **The 3 dashboard charts read real data computed from the user's `jobs` rows** —
+  `lib/chart-data.ts` `getChartData()` → `{ jobsOverTime, companyResearch, matchDistribution }`,
+  built from `getUserJobs()` (the same source as the stat cards). `app/dashboard/page.tsx` adds
+  `getChartData()` to its `Promise.all` and passes each series down.
+- **Data source = DB, not PostHog.** First implemented against the PostHog HogQL Query API
+  (build-plan §17 wording), then switched: the public `phc_` key is write-only and the
+  server-side `company_researched` capture is `void`'d/fire-and-forget in the research route, so
+  events are lost and PostHog is an unreliable read source (observed live: 4 researched companies,
+  0 in the chart). The DB already holds everything. The `lib/posthog-query.ts` helper and the
+  `POSTHOG_PERSONAL_API_KEY`/`POSTHOG_PROJECT_ID` env vars were removed.
+- **§17 chart swap kept:** `ResumeTailoringChart` deleted, replaced by `CompanyResearchChart`.
+  Final three: Jobs Found Over Time (30 days by `found_at`, area `#7c5cfc`), Company Research
+  Activity (researched jobs, 7 days by `found_at`, bars `#61a8ff`), Match Score Distribution
+  (`match_score` bucketed 50-60…90-100, bars `#10b981`).
+- **Tradeoff:** `jobs` has no `researched_at`, so Company Research Activity is keyed by
+  `found_at` (job-discovery day) — the accepted feature-16 inaccuracy. Acceptable because the
+  signal is "research happened on recently-found jobs."
+- **Charts take a `data` prop + have empty states.** `ChartCard` gained `isEmpty`/`emptyLabel`
+  and renders a centered `ChartEmpty` (Sparkles + muted copy, matching `RecentActivity`) — not
+  mount-gated, so it shows without the chart-body flash. Each series returns `[]` when it has no
+  data in its window. HogQL/SQL grouping replaced by JS: zero-filled date axis + fixed buckets
+  computed in code (per `dashboard-stats.ts`). `getChartData()` never throws.
+- `tsc` + `eslint` + `next build` clean (17/17 routes, `/dashboard` dynamic `ƒ`, no recharts
+  warnings).
+
+---
+
+### Feature 16 — Recent Activity Real Data (2026-06-12)
+
+The dashboard Recent Activity feed now shows the user's real completed job searches +
+company-research entries. Only the three charts remain mock (feature 17). `tsc` + eslint +
+`next build` clean (17/17).
+
+- **`lib/activity.ts`** (new) — `getRecentActivity(limit = 6)`: user-scoped, parallel reads of
+  `agent_runs` (status='completed') and `jobs` (with a dossier), merged + sorted by timestamp
+  desc, sliced. `search` → "Found X jobs for [title]" (timestamp `completed_at ?? started_at`);
+  `research` → "Researched [company]" (timestamp **`found_at`**). Degrades to `[]` on any
+  auth/db failure (same resilient pattern as `lib/jobs`).
+- **Research entries are timestamped by `found_at`** (job-discovery time), not a separate
+  research timestamp. **`public.jobs` has NO `updated_at`/`researched_at` column** (verified via
+  `get-table-schema` + a live `42703 column does not exist` probe — an earlier
+  `information_schema` check matched a *different* schema's `jobs` table and was wrong). A first
+  attempt to stamp `jobs.updated_at` in the research route was a **latent 42703 bug that would
+  have broken every Research Company save** — reverted before any research run. Accurate
+  research-time ordering would need a schema migration (new `researched_at` column) — deferred,
+  offered as a follow-up.
+- **`RecentActivity`** rewritten from the mock array to a `items: ActivityItem[]` prop. Two dot
+  colors per build-plan §16 — `search` = success green (success-light/success-alt), `research` =
+  info blue (info-light/info). Added an **empty state** (Sparkles + "No activity yet").
+- **`app/dashboard/page.tsx`** — `getRecentActivity()` added to the `Promise.all`; passes
+  `items={activity}`.
+- **SDK note:** "company_research IS NOT NULL" is filtered **in code**, not the query — the
+  InsForge db SDK documents only `.is(col, null)` for null checks, not its inverse (`.not(...)`
+  is undocumented). Selects recent rows (user-scoped, small set) and filters in JS. Recorded in
+  library-docs.
+
+### Feature 15 — Stats Bar Real Data (2026-06-11)
+
+The four dashboard stat cards now show real per-user numbers; charts + recent activity stay
+mock (features 16-17). `tsc` + eslint + `next build` clean (17/17).
+
+- **`lib/dashboard-stats.ts`** (new) — `getDashboardStats()`: reuses `getUserJobs()` (the
+  user-scoped, failure-degrading jobs read) and computes in code — totalJobs, avgMatchRate
+  (rounded mean of non-null `match_score`, 0 when none), companiesResearched (`company_research`
+  non-null), jobsThisWeek (`found_at` within 7 days). No SQL aggregates: the per-user row set is
+  small and reusing `getUserJobs` keeps one source of truth (also inherits its degrade-to-empty).
+- **`StatsGrid`** now takes `stats: DashboardStats` (was a self-contained mock array); labels +
+  icons live here, values come from props. **4th card changed** "Cover Letters Generated"
+  (no backing data) → **"Jobs This Week"** (Calendar icon) per build-plan §15.
+- **`StatCard.trend` is now optional** and the trend badge renders only when present. Real data
+  passes no trend — there's no honest week-over-week basis yet, and §15 only specifies the four
+  values (deliberately not fabricating `↑12%` deltas, consistent with the honest-fit ethos).
+- **`app/dashboard/page.tsx`** — fetches `getProfileStatus()` + `getDashboardStats()` in
+  `Promise.all`; passes `stats` to `StatsGrid`.
+- **`ChartCard` SSR-gate rewritten** (feature 14 follow-up): the `useEffect(setMounted)` mount
+  gate tripped the new `react-hooks/set-state-in-effect` lint rule, so it now uses
+  `useSyncExternalStore` (server snapshot `false`, client `true`) — same SSR-only-render
+  behavior, no effect, lint clean.
+- **Feature 14 docs closed:** `recharts` added to code-standards approved deps; recharts section
+  added to library-docs (mount-gate + sanctioned-hex rules); all 8 dashboard components
+  registered in ui-registry.
+
+### Feature 14 — Dashboard Page Full UI (2026-06-11)
+
+Full `/dashboard` UI on mock data (per the build-plan's "full UI first" principle), with
+the one genuinely-conditional element — the incomplete-profile banner — wired to real data.
+`tsc` + eslint + `next build` all clean (17/17); recharts SSR warning eliminated.
+
+- **`app/dashboard/page.tsx`** — rebuilt from the placeholder into an async Server Component.
+  Reads `getProfileStatus()`; renders `IncompleteProfileBanner` only when `!isComplete`, then
+  `StatsGrid` → (JobsOverTime + RecentActivity) → (ResumeTailoring + MatchDistribution).
+  Container `w-full max-w-[1440px] mx-auto px-8 py-8 flex flex-col gap-6`.
+- **`lib/profile.ts`** (new) — `getProfileStatus()`: server read of the signed-in user's
+  profile row, coerced to `CompletionInput` and run through the canonical
+  `getProfileCompletion` (same helper as the profile ring + `saveProfile`). Degrades to
+  "incomplete, all missing" on any auth/db failure — the banner is a nudge, never a blocker.
+- **`components/dashboard/`** (8 components): `StatCard`/`StatsGrid` (4 mock stat cards +
+  `TrendingUp` trend badge), `RecentActivity` (5 mock entries, dot colors per ui-tokens),
+  `IncompleteProfileBanner` (presentational, accent-muted pills + link to /profile),
+  `ChartCard` (shared client shell, mount-gates the chart body so recharts never renders SSR),
+  and three recharts charts: `JobsOverTimeChart` (Area, #7C5CFC gradient), `ResumeTailoringChart`
+  (Bar, #61A8FF), `MatchDistributionChart` (Bar, #10B981). Chart set follows build-plan §14
+  (Resume Tailoring kept, not §17's Company Research swap).
+- **`recharts@3.8.1`** added. **Hex literals in the chart components are the sanctioned
+  exception** (same as `lib/resume-pdf.tsx`): recharts props can't read `@theme` tokens — the
+  values come straight from ui-tokens.md "Dashboard Chart Colors". Documented in library-docs.
+- **`components/icons/index.tsx`** — added `TrendingUp` + `TrendingDown` (stat-card trends).
+- **Real wiring deferred to 15-17 as planned:** stat counts, recent-activity feed, and the
+  three chart series are mock. Note: the browser InsForge client is still sessionless (feature
+  08 caveat) — realtime/PostHog chart reads in 16/17 must go through the server.
 
 ### Honest fit verdict in the dossier (2026-06-11)
 

@@ -348,3 +348,49 @@ Components. The page passes `applyUrl = external_apply_url ?? source_url` into J
 ### ApplyBar
 **File:** `components/job-details/ApplyBar.tsx`
 - `<Button asChild variant="default" size="lg" className="w-full">` wrapping `<a target="_blank" rel="noopener noreferrer">`; disabled `<Button>` when no url
+
+---
+
+## Dashboard Components (feature 14)
+
+All under `components/dashboard/`. Page (`app/dashboard/page.tsx`) is an async Server Component
+(`w-full max-w-[1440px] mx-auto px-8 py-8 flex flex-col gap-6`): heading → `IncompleteProfileBanner`
+(only when `!isComplete`) → `StatsGrid` → 2-col grid (JobsOverTimeChart + RecentActivity) → 2-col
+grid (CompanyResearchChart + MatchDistributionChart). Banner, stats, activity, and all three
+charts are wired to real data (features 14-17) via the page's `Promise.all` of `getProfileStatus()`,
+`getDashboardStats()`, `getRecentActivity()`, `getChartData()`.
+
+### IncompleteProfileBanner
+**File:** `components/dashboard/IncompleteProfileBanner.tsx`
+**Type:** Server Component (presentational — receives `percentage` + `missingFields`)
+- Card: standard surface card + shadow, `flex flex-col sm:flex-row sm:items-center gap-5`
+- Icon box: `w-11 h-11 rounded-xl bg-accent-muted` + `TriangleAlert w-5 h-5 text-accent`
+- Missing-field pills: `px-2 py-0.5 rounded-full text-xs font-medium bg-accent-muted text-accent uppercase tracking-wide` (same as CompletionIndicator)
+- CTA: `<Button asChild>` → `<Link href="/profile">` + `ArrowRight`
+
+### StatCard / StatsGrid
+**Files:** `components/dashboard/StatCard.tsx`, `StatsGrid.tsx`
+**Type:** Server Components
+- Grid: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6`
+- Card: standard surface card + shadow, `flex flex-col gap-4`
+- Top row: label `text-sm font-medium text-text-secondary` + icon box `w-10 h-10 rounded-xl bg-accent-muted` / `w-5 h-5 text-accent`
+- Stat number: `text-3xl font-semibold text-text-primary leading-9` (30px/600 per ui-tokens)
+- Trend badge (optional): `inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-success-lightest text-success-darker text-xs font-medium` + `TrendingUp w-3 h-3` + "vs last week" muted
+
+### RecentActivity
+**File:** `components/dashboard/RecentActivity.tsx`
+**Type:** Server Component
+- Card: standard surface card + shadow; title `text-base font-semibold text-text-primary`
+- Rows: `flex items-center gap-3 py-3` separated by `border-b border-border` (last row none)
+- Dot: `relative w-4 h-4 rounded-full {ring} border border-surface` + inner `w-2 h-2 rounded-full {dot}` — colors per ui-tokens Activity Dots: resume/research accent-light+accent, cover info-light+info, job success-light+success-alt
+- Text `flex-1 text-sm font-medium text-text-primary`; time `text-xs text-text-muted whitespace-nowrap`
+
+### ChartCard + charts (recharts)
+**Files:** `components/dashboard/ChartCard.tsx`, `JobsOverTimeChart.tsx`, `CompanyResearchChart.tsx`, `MatchDistributionChart.tsx`
+**Type:** Client Components (`"use client"` — recharts needs the DOM). Each takes a `data` prop fed from `lib/chart-data.ts` (`getChartData()`, computed from the user's `jobs` rows via `getUserJobs()` — feature 17; not PostHog, which is capture-only and lossy for reads).
+- **ChartCard** (shared shell): standard surface card + shadow; title + `h-56 w-full` body; **mount-gates the chart body** (`useSyncExternalStore` → false on server, true after hydration) so recharts never renders SSR — see library-docs recharts section. Reuse for any new chart. Props `isEmpty?` + `emptyLabel?`: when `isEmpty`, renders a centered `ChartEmpty` (Sparkles + muted copy, same look as RecentActivity's empty state) instead of the chart body — **not** mount-gated, so it shows without a flash.
+- **JobsOverTimeChart** (`data: {day,jobs}[]`): recharts `AreaChart`, `#7c5cfc` stroke (3px) + gradient fill; last 30 days, XAxis `interval="preserveStartEnd"` + `minTickGap={24}`.
+- **CompanyResearchChart** (`data: {day,count}[]`): `BarChart`, `#61a8ff` bars `radius={[4,4,0,0]}`, last 7 days (weekday labels). Replaced the old ResumeTailoringChart per build-plan §17.
+- **MatchDistributionChart** (`data: {range,count}[]`): `BarChart`, `#10b981` bars, score ranges 50-60…90-100.
+- Each chart sets `isEmpty={data.length === 0}` with its own `emptyLabel` (the data fn returns `[]` when its source has zero events).
+- All: `CartesianGrid strokeDasharray="4 4" stroke #e7eaf3 vertical={false}`, axes `tickLine/axisLine={false}` + `tick {fontSize:12, fill:#9ca3af}`. Hex literals = sanctioned exception (recharts can't read `@theme`).

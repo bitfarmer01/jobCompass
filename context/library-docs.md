@@ -142,6 +142,13 @@ InsForge follows the PostgREST/Supabase model. When you create a table via `run-
   tables). Do **not** alter the global default privileges to strip `anon` — that would break any
   future intentionally-public/anon-readable table.
 
+**Filter operators (db SDK):** the documented filters are `.eq/.neq/.gt/.gte/.lt/.lte/.like/
+.ilike/.in/.is`. For null checks the SDK documents only `.is(col, null)` (IS NULL) — there is
+**no documented inverse** (`.not(...)` is a postgrest-js method but undocumented for InsForge and
+unused in this codebase). To get "IS NOT NULL", either select the column and filter in code
+(see `lib/activity.ts` — fine for small user-scoped sets) or rely on `.is`/code rather than
+`.not`.
+
 ---
 
 ### Storage
@@ -702,6 +709,13 @@ await posthog.shutdown(); // required — ensures event is sent
 - Call `posthog.identify(userId)` after login on client side
 - Call `posthog.reset()` on logout on client side
 
+> **Dashboard charts read from the DB, not PostHog (feature 17).** The public `phc_…` key is
+> write-only, and `posthog-node` server captures are fire-and-forget — `company_researched` is
+> `void`'d in the research route, so events are easily lost and PostHog is not a reliable read
+> source. The three dashboard charts are computed from the user's `jobs` rows in
+> `lib/chart-data.ts` (via `getUserJobs()`), the same source as the stat cards. PostHog stays
+> capture-only.
+
 ---
 
 ## @react-pdf/renderer
@@ -796,3 +810,28 @@ const text = result.text; // full raw text as a single string
 - `pdfData.text` is raw unformatted text — the NIM extractor handles the structure extraction
 - Always handle parse errors — some PDFs are image-based and return empty text
 - If `pdfData.text` is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."
+
+---
+
+## recharts (Dashboard Charts — feature 14)
+
+Charts on `/dashboard` (`components/dashboard/*Chart.tsx`). recharts needs the DOM, so every
+chart is a `"use client"` component wrapped in `<ResponsiveContainer width="100%" height="100%">`
+inside a fixed-height box.
+
+**Rules:**
+
+- **Mount-gate the chart body.** recharts' `ResponsiveContainer` can't measure a 0×0 container
+  during SSR and logs `width(-1)/height(-1)` warnings on every prerender. `components/dashboard/ChartCard.tsx`
+  renders its children only after mount (`useSyncExternalStore` → false on server, true after
+  hydration — no setState-in-effect), so charts never render server-side. Reuse `ChartCard` for any
+  new chart rather than re-solving this. Pass `isEmpty`/`emptyLabel` to show a (non-gated) empty
+  state instead of the chart body when there's no data.
+- **Hex color props are the sanctioned no-hex exception.** recharts props (`stroke`, `fill`,
+  axis `tick.fill`, grid `stroke`) take plain color strings and can't read Tailwind `@theme`
+  tokens — the same exception `lib/resume-pdf.tsx` has for `@react-pdf`. Use the exact values
+  from ui-tokens.md "Dashboard Chart Colors": line `#7c5cfc` (gradient fill rgba(124,92,252,0.2)),
+  Resume Tailoring bars `#61a8ff`, Match Distribution bars `#10b981`, grid `#e7eaf3` (dashed),
+  axis labels `#9ca3af` 12px. Define them as named consts at the top of the file with a comment.
+- Axis styling: `tickLine={false} axisLine={false}`, `tick={{ fontSize: 12, fill: AXIS }}`;
+  `CartesianGrid strokeDasharray="4 4" stroke={GRID} vertical={false}`.
