@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft } from "@/components/icons";
 
 import { ApplyBar } from "@/components/job-details/ApplyBar";
 import { CompanyResearch } from "@/components/job-details/CompanyResearch";
@@ -9,6 +9,7 @@ import { JobHeader } from "@/components/job-details/JobHeader";
 import { JobInfoCards } from "@/components/job-details/JobInfoCards";
 import { MatchReasoning } from "@/components/job-details/MatchReasoning";
 import { SkillsComparison } from "@/components/job-details/SkillsComparison";
+import { toDossier } from "@/lib/dossier";
 import { getJobById } from "@/lib/jobs";
 
 export default async function JobDetailsPage({
@@ -41,7 +42,11 @@ export default async function JobDetailsPage({
           missing={job.missing_skills}
         />
         <JobDescription text={job.about_role} sourceUrl={applyUrl} />
-        <CompanyResearch company={job.company} />
+        <CompanyResearch
+          jobId={job.id}
+          company={job.company}
+          research={toDossier(job.company_research)}
+        />
       </div>
 
       <ApplyBar url={applyUrl} company={job.company} />

@@ -335,52 +335,68 @@ Browserbase sessions run on Browserbase's cloud infrastructure, not inside your 
 
 **Check first:** Check AGENTS.md for an installed Stagehand skill. If a Stagehand MCP server is configured — use it. The skill/MCP will have the latest act() and extract() patterns.
 
-### Initialisation
+### Initialisation (Stagehand v3 — VERIFIED LIVE 2026-06-11, feature 13)
+
+The config below was verified end-to-end against `@browserbasehq/stagehand@3.5.0` and a real
+Browserbase session + NIM extraction. Three hard-won facts — do not regress them:
+
+1. **`disableAPI: true` is REQUIRED with a custom model endpoint.** By default Stagehand v3
+   proxies LLM calls through its own hosted API, which cannot reach a custom `baseURL` (404s).
+   `disableAPI: true` runs the LLM calls locally via the AI SDK.
+2. **The model prefix must be `groq/`, not `openai/` or `togetherai/`.** The prefix picks the
+   AI SDK sub-provider: `openai/` targets the OpenAI *Responses* API (`/v1/responses` — NIM
+   doesn't implement it, 404); `togetherai/` hits the right `/chat/completions` endpoint but
+   sends NO schema constraint (model invents JSON key names → AI_NoObjectGeneratedError);
+   `groq/` is OpenAI-compatible chat-completions AND Stagehand passes `structuredOutputs: true`
+   for it (response_format json_schema, which NIM honors). The rest of the string after the
+   prefix is the model id sent to NIM.
+3. **Use the non-reasoning nano model for Stagehand** (`nvidia/nvidia-nemotron-nano-9b-v2`
+   with `/no_think` via `systemPrompt`). The 30b reasoning model leaks its reasoning into
+   `content` on this transport and fails extraction parsing (verified live). The 30b stays on
+   dossier synthesis via `lib/nim-client.ts`, where reasoning params are handled.
+
+Also: v3 has no top-level session-bound `projectId` requirement when `browserbaseSessionID` is
+passed — create the session via `lib/browserbase.ts` and hand the id over. `extract()` takes
+POSITIONAL args. The page handle comes from `stagehand.context.pages()[0]`.
 
 ```typescript
 import { Stagehand } from "@browserbasehq/stagehand";
+import { createResearchSession } from "@/lib/browserbase";
 
+const session = await createResearchSession();
 const stagehand = new Stagehand({
   env: "BROWSERBASE",
   apiKey: process.env.BROWSERBASE_API_KEY!,
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  // NIM via Stagehand's OpenAI-compatible custom model support — this project
-  // never uses the OpenAI API. Verify exact config when feature 13 starts.
   model: {
-    modelName: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    modelName: "groq/nvidia/nvidia-nemotron-nano-9b-v2", // groq/ = OpenAI-compatible + structured outputs
     apiKey: process.env.NIM_API_KEY!,
     baseURL: "https://integrate.api.nvidia.com/v1",
   },
+  systemPrompt: "/no_think", // disable nano-9b thinking inside Stagehand's calls
+  verbose: 0,
   disablePino: true,
+  disableAPI: true, // REQUIRED: custom baseURL only works with local LLM execution
 });
 
 await stagehand.init();
-const page = stagehand.context.activePage()!;
+const page = stagehand.context.pages()[0];
+await page.goto(url);
 ```
 
-### extract()
+### extract() — positional args in v3 (NOT an options object)
 
 ```typescript
 import { z } from "zod";
 
-const result = await stagehand.extract({
-  instruction:
-    "Extract the company overview, main product description, and any technology mentions from this page.",
-  schema: z.object({
+const result = await stagehand.extract(
+  "Extract the company overview, main product description, and any technology mentions from this page.",
+  z.object({
     companyOverview: z.string().optional(),
     mainProduct: z.string().optional(),
     techMentions: z.array(z.string()).optional(),
-    navLinks: z
-      .array(
-        z.object({
-          label: z.string(),
-          url: z.string(),
-        }),
-      )
-      .optional(),
   }),
-});
+);
 ```
 
 ### act()
@@ -388,9 +404,7 @@ const result = await stagehand.extract({
 ```typescript
 // Always wrap in try/catch
 try {
-  await stagehand.act({
-    action: "Click the About link in the navigation",
-  });
+  await stagehand.act("Click the About link in the navigation");
 } catch (error) {
   await logAgentError(jobId, null, error);
 }
