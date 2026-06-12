@@ -1,4 +1,8 @@
-import { streamNimContent, type NIMStreamParams } from "@/lib/nim-client";
+import {
+  parseNimJson,
+  streamNimContent,
+  type NIMStreamParams,
+} from "@/lib/nim-client";
 import type { AdzunaJob } from "@/lib/adzuna";
 import type { JobScore, Profile } from "@/types";
 
@@ -152,7 +156,10 @@ Titles Seeking: ${profile.job_titles_seeking?.join(", ") || "None listed"}`;
     };
 
     const content = await streamNimContent(params);
-    const parsed = JSON.parse(content) as JobScore;
+    // parseNimJson, not bare JSON.parse — the model sometimes wraps the JSON
+    // in prose or leaks control chars; this was silently dropping jobs
+    // ("Skipped — match scoring failed").
+    const parsed = parseNimJson(content) as JobScore;
 
     // Defensive normalization — clamp the score to a 0-100 integer and force
     // arrays so a sloppy model output never produces an unrenderable job row.

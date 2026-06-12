@@ -324,7 +324,13 @@ Browserbase sessions run on Browserbase's cloud infrastructure, not inside your 
 **Rules:**
 
 - Always use single sessions — never parallel sessions (free plan limit)
-- Session timeout is 120 seconds — sufficient for 3-4 page visits
+- Session timeout is 300 seconds — 120s proved too short in the first live run; an
+  idle-after-close session costs nothing, so leave headroom
+- **The browser is the FALLBACK, not the default** (revised 2026-06-11): company research
+  fetches pages as plain HTML server-side and strips them to text in code — a Browserbase
+  session is opened only when the fetched homepage is a JS shell (<400 chars of text). In the
+  fallback the page is read via `page.evaluate` (document.body.innerText) — `extract()` is
+  NOT used (its DOM chunking through the LLM took 318s for one page on NIM)
 - Always end sessions cleanly — call stagehand.close() when done
 - Project ID always from `process.env.BROWSERBASE_PROJECT_ID` — never hardcode
 - Browserbase client lives in `lib/browserbase.ts` — always import from there

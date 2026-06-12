@@ -195,8 +195,8 @@ export function CompanyResearch({ jobId, company, research }: Props) {
             Researching {name}…
           </p>
           <p className="text-sm text-text-muted max-w-sm">
-            Browsing {name}&rsquo;s site and building your dossier — this can
-            take a couple of minutes. Keep this page open.
+            Reading {name}&rsquo;s site and building your dossier — usually
+            done in under a minute. Keep this page open.
           </p>
         </div>
       ) : (

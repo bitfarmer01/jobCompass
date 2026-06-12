@@ -11,6 +11,25 @@ export type NIMStreamParams = {
   chat_template_kwargs?: Record<string, unknown>;
 };
 
+// Robust JSON extraction for NIM output. Models sometimes emit prose before
+// the JSON ("Let's craft...{...}") or raw control characters inside string
+// literals — both observed live (2026-06-11). Strategy: slice the outermost
+// {...} block, parse; on failure, replace raw control characters with spaces
+// (valid JSON never contains them inside tokens) and parse again.
+export function parseNimJson(content: string): unknown {
+  const start = content.indexOf("{");
+  const end = content.lastIndexOf("}");
+  if (start === -1 || end <= start) {
+    throw new Error("No JSON object found in model output.");
+  }
+  const block = content.slice(start, end + 1);
+  try {
+    return JSON.parse(block);
+  } catch {
+    return JSON.parse(block.replace(/[\u0000-\u001f]+/g, " "));
+  }
+}
+
 export async function streamNimContent(params: NIMStreamParams): Promise<string> {
   const res = await fetch(`${NIM_BASE_URL}/chat/completions`, {
     method: "POST",
