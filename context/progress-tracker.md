@@ -53,6 +53,35 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ---
 
+### Feature 13 revision — fetch-first research, identity guard, parse hardening (2026-06-11, post live run)
+
+The first authenticated run exposed three defects; the research pipeline was redesigned and
+**verified live end-to-end** (real DB jobs driven through `researchCompany` via an esbuild
+bundle): wrong-company case 9.3s, correct-company case 9.5s — down from 10+ minutes and a
+dead Browserbase session.
+
+- **Per-page LLM extraction is GONE** (root cause of the slowness: Stagehand `extract()`
+  chunks the whole DOM through the model — 318s for ONE page on NIM, blowing the 120s
+  session). Pages are now fetched as plain HTML server-side and stripped to text in code
+  (`htmlToText`, regex link extraction, code-ranked sub-pages, parallel sub-page fetches);
+  the ONLY model call in the pipeline is the final 30b synthesis reading raw page text.
+  A Browserbase session is opened only as a JS-shell fallback (<400 chars of homepage text)
+  and reads pages via `page.evaluate` — still zero LLM in the browser.
+- **Identity guard** (root cause of wrong-company research: Adzuna's redirect_url usually
+  stays on adzuna.com, so `www.{company}.com` guessing is the COMMON path — the first run
+  researched Blockhouse *Contract Furniture* for the Blockhouse *crypto-trading* job). The
+  synthesis prompt now carries an identity check + `usedWebsiteResearch` flag: mismatched
+  research is ignored and `sources` is emptied. Verified live on the exact failing job.
+- **`parseNimJson` in `lib/nim-client.ts`** — robust JSON extraction (outermost `{...}`
+  slice + control-char sanitization), used by BOTH the researcher and `agent/matcher.ts`.
+  Fixes the live-observed `Let's craft…{json}` prose-prefix and raw-control-char failures,
+  and the long-standing "Skipped — match scoring failed" silent job drops in search.
+- Browserbase session timeout 120s → 300s; double-synthesis failure now writes an
+  `agent_logs` ERROR row (failures were invisible outside the server console); loading copy
+  updated to "usually done in under a minute".
+- Removed: Stagehand model config (groq/nano-9b), both extraction zod schemas. The verified
+  groq/`disableAPI` transport facts remain documented in library-docs.md for future use.
+
 ### Feature 13 — Company Research Agent (2026-06-11)
 
 Browserbase/Stagehand agent researches the employer's website and a NIM synthesis writes a

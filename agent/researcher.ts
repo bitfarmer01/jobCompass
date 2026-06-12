@@ -1,104 +1,62 @@
-import { z } from "zod";
 import { Stagehand } from "@browserbasehq/stagehand";
 
 import { createResearchSession } from "@/lib/browserbase";
 import { toDossier } from "@/lib/dossier";
 import { logAgent } from "@/lib/agent-logs";
-import { streamNimContent, type NIMStreamParams } from "@/lib/nim-client";
+import {
+  parseNimJson,
+  streamNimContent,
+  type NIMStreamParams,
+} from "@/lib/nim-client";
 import type { CompanyDossier, Job, Profile } from "@/types";
 
-// Model split (decided 2026-06-11): Stagehand's internal extraction calls run
-// on the non-reasoning nano model — its thinking is disabled via /no_think in
-// the system prompt, so Stagehand always sees clean content (the 30b reasoning
-// model leaks reasoning into content on this transport — verified live).
-// The 30b stays on the final dossier synthesis, where quality matters most and
-// our own nim-client handles the reasoning params.
-// "groq/" prefix — verified live (2026-06-11): Stagehand routes it to the AI
-// SDK's OpenAI-COMPATIBLE chat-completions client AND passes structuredOutputs
-// (response_format json_schema, which NIM honors — keys come back exactly per
-// schema). "openai/" is wrong here: it targets the /v1/responses API (404 on
-// NIM); "togetherai/" hits the right endpoint but sends no schema constraint,
-// so the model invents key names. The remainder after the prefix is the model
-// id sent to NIM.
-const STAGEHAND_MODEL = "groq/nvidia/nvidia-nemotron-nano-9b-v2";
+// Architecture revision (2026-06-11, after the first live run): per-page LLM
+// extraction is GONE. Stagehand's extract() chunks the whole DOM through the
+// model — one sub-page took 318s of inference and blew the Browserbase session
+// timeout. Instead, pages are fetched as plain HTML and stripped to text in
+// code (milliseconds), and the ONLY model call in the whole pipeline is the
+// final 30b synthesis, which reads the raw page text directly. A headless
+// browser (Browserbase, no LLM attached) is used solely as a fallback for
+// JS-shell sites whose fetched HTML contains no real content.
 const SYNTHESIS_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
-const MAX_SUB_PAGES = 3;
+const MAX_SUB_PAGES = 2;
+const HOMEPAGE_TEXT_CAP = 6_000; // chars — keeps the synthesis prompt small & fast
+const SUB_PAGE_TEXT_CAP = 4_000;
+const MIN_HOMEPAGE_TEXT = 400; // less than this → JS shell → browser fallback
 
-// --- Extraction schemas (verbatim from build-plan §13) ----------------------
+// Plain-browser UA — some company sites serve bot UAs an empty page.
+const FETCH_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36";
 
-const homepageSchema = z.object({
-  oneLiner: z.string().describe("What the company does in one sentence"),
-  productSummary: z.string().describe("What they build/sell and who it's for"),
-  signals: z
-    .array(z.string())
-    .describe("Funding, notable customers, scale, mission, recent news"),
-  pageLinks: z
-    .array(
-      z.object({
-        url: z.string(),
-        kind: z.enum([
-          "about",
-          "careers",
-          "blog",
-          "engineering",
-          "product",
-          "team",
-          "other",
-        ]),
-      }),
-    )
-    .describe("Internal links worth visiting"),
-});
-
-const subPageSchema = z.object({
-  keyPoints: z.array(z.string()),
-  technologies: z
-    .array(z.string())
-    .describe("Specific languages, frameworks, tools, platforms"),
-  valuesOrCulture: z
-    .array(z.string())
-    .describe("Stated values, working style, team norms"),
-  notable: z
-    .array(z.string())
-    .describe("Customers, funding, scale, projects, awards"),
-});
-
-const HOMEPAGE_INSTRUCTION =
-  "This is a company's homepage. Capture what the company actually does, who it's for, and any concrete signals (funding, customers, scale, mission, recent launches). Then find the internal links most worth visiting to research them as an employer.";
-
-const SUB_PAGE_INSTRUCTION =
-  "Extract substance that helps a candidate understand this company before applying: what they do, their values and how they work, the specific technologies and tools they use, notable projects or customers, and how the team operates. Ignore nav, footers, cookie banners, and generic marketing copy.";
-
-type HomepageData = z.infer<typeof homepageSchema>;
-type SubPageData = z.infer<typeof subPageSchema>;
+type PageText = { url: string; text: string };
 
 type CompanyResearchData = {
-  homepage: Omit<HomepageData, "pageLinks">;
-  pages: Array<{ url: string } & SubPageData>;
-  visitedUrls: string[]; // homepage + sub-pages actually reached → dossier.sources
+  pages: PageText[];
+  visitedUrls: string[]; // pages actually read → dossier.sources
 };
 
 // --- Homepage URL derivation -------------------------------------------------
 
 // Strips the subdomain: jobs.stripe.com → stripe.com. Known limitation: naive
 // last-two-labels misfires on two-part TLDs (.co.uk) — accepted per build plan;
-// the browser stage is failure-tolerant and synthesis runs regardless.
+// the research stage is failure-tolerant and synthesis runs regardless.
 function rootDomain(hostname: string): string {
   return hostname.split(".").slice(-2).join(".");
 }
 
-// null when there's no usable company name — the caller skips the browser
-// stage entirely rather than opening a session against a malformed URL.
+// null when there's no usable company name — the caller skips web research
+// entirely rather than fetching a malformed URL.
 function fallbackHomepage(company: string | null): string | null {
   const slug = (company ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
   return slug ? `https://www.${slug}.com` : null;
 }
 
-// Follows the Adzuna redirect with a plain server-side fetch — no browser
-// needed for this step. Falls back to https://www.{company}.com when the
-// redirect never leaves adzuna.com, the URL is missing, or the fetch fails;
-// null when no homepage can be derived at all (→ synthesis-only).
+// Follows the Adzuna redirect with a plain server-side fetch. Reality check
+// from the first live run: Adzuna's redirect_url usually STAYS on adzuna.com
+// (their own details page), so the www.{company}.com guess is the COMMON path,
+// not the exception — which is why synthesis carries an identity guard (see
+// SYNTHESIS_SYSTEM_PROMPT) against researching the wrong company.
 export async function deriveHomepageUrl(
   redirectUrl: string | null,
   company: string | null,
@@ -108,6 +66,7 @@ export async function deriveHomepageUrl(
     const res = await fetch(redirectUrl, {
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
+      headers: { "User-Agent": FETCH_UA },
     });
     const finalUrl = new URL(res.url);
     if (finalUrl.hostname.includes("adzuna.com")) {
@@ -120,57 +79,143 @@ export async function deriveHomepageUrl(
   }
 }
 
-// --- Browser research (single Browserbase session) ---------------------------
+// --- HTML → text (no LLM, no dependencies) -----------------------------------
 
-// Lower rank = visited first. Substance pages beat careers (build plan: prefer
-// about/blog/engineering/product over careers).
-const KIND_RANK: Record<HomepageData["pageLinks"][number]["kind"], number> = {
-  about: 0,
-  engineering: 1,
-  product: 2,
-  blog: 3,
-  team: 4,
-  other: 5,
-  careers: 6,
+const ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&nbsp;": " ",
 };
 
-// Trailing-slash/hash-insensitive key so https://x.com and https://x.com/
-// dedupe to one visit.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<(script|style|noscript|svg|template)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (m) => ENTITIES[m] ?? " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+type Link = { url: string; label: string };
+
+function extractLinks(html: string, baseUrl: string): Link[] {
+  const links: Link[] = [];
+  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null && links.length < 200) {
+    try {
+      links.push({
+        url: new URL(m[1], baseUrl).toString(),
+        label: htmlToText(m[2]).toLowerCase(),
+      });
+    } catch {
+      // unparseable href — skip
+    }
+  }
+  return links;
+}
+
+// --- Sub-page selection (plain code — build plan ranking, careers last) ------
+
+const LINK_PRIORITY: Array<{ re: RegExp; rank: number }> = [
+  { re: /about|company|who[- ]we[- ]are|mission/, rank: 0 },
+  { re: /engineering|tech(nology)?|developers?/, rank: 1 },
+  { re: /product|platform|solutions|services/, rank: 2 },
+  { re: /blog|news|insights/, rank: 3 },
+  { re: /team|people|leadership/, rank: 4 },
+  { re: /careers|jobs|join/, rank: 6 },
+];
+
+function linkRank(link: Link): number {
+  const hay = `${link.url.toLowerCase()} ${link.label}`;
+  for (const { re, rank } of LINK_PRIORITY) {
+    if (re.test(hay)) return rank;
+  }
+  return 99; // unranked links are never visited
+}
+
+// Trailing-slash-insensitive key so https://x.com and https://x.com/ dedupe.
 function urlKey(url: string): string {
   const u = new URL(url);
   return `${u.origin}${u.pathname.replace(/\/+$/, "")}${u.search}`;
 }
 
-function pickSubPages(
-  links: HomepageData["pageLinks"],
-  homepageUrl: string,
-): string[] {
+function pickSubPages(links: Link[], homepageUrl: string): string[] {
   const root = rootDomain(new URL(homepageUrl).hostname);
   const seen = new Set<string>([urlKey(homepageUrl)]);
   return links
+    .map((l) => ({ ...l, rank: linkRank(l) }))
     .filter((l) => {
+      if (l.rank > 10) return false;
       try {
-        return rootDomain(new URL(l.url, homepageUrl).hostname) === root;
+        return rootDomain(new URL(l.url).hostname) === root;
       } catch {
         return false;
       }
     })
-    .sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
-    .map((l) => new URL(l.url, homepageUrl).toString())
-    .filter((url) => {
-      const key = urlKey(url);
+    .sort((a, b) => a.rank - b.rank)
+    .filter((l) => {
+      const key = urlKey(l.url);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     })
-    .slice(0, MAX_SUB_PAGES);
+    .slice(0, MAX_SUB_PAGES)
+    .map((l) => l.url);
 }
 
-// Opens ONE Browserbase session, extracts the homepage, then up to 3 sub-pages.
-// Returns null when the homepage yields nothing meaningful (the signal to skip
-// browser research and synthesize from job description + profile only). The
-// session is always closed in finally — and before NIM synthesis ever runs.
-async function collectCompanyResearch(
+// --- Fast path: plain fetch ----------------------------------------------------
+
+async function fetchHtml(url: string): Promise<string> {
+  const res = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(8_000),
+    headers: { "User-Agent": FETCH_UA, Accept: "text/html" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+// Homepage + up to MAX_SUB_PAGES fetched as raw HTML; sub-pages in PARALLEL.
+// Wall-clock is ~2-4s total. Returns null when the homepage yields too little
+// text (JS shell / bot wall) — the signal to try the browser fallback.
+async function collectViaFetch(
+  homepageUrl: string,
+): Promise<CompanyResearchData | null> {
+  const html = await fetchHtml(homepageUrl);
+  const homepageText = htmlToText(html);
+  if (homepageText.length < MIN_HOMEPAGE_TEXT) return null;
+
+  const subUrls = pickSubPages(extractLinks(html, homepageUrl), homepageUrl);
+  const subPages = await Promise.all(
+    subUrls.map(async (url): Promise<PageText | null> => {
+      // Per-page failures are skipped — one broken page must not cost the rest.
+      try {
+        return { url, text: htmlToText(await fetchHtml(url)).slice(0, SUB_PAGE_TEXT_CAP) };
+      } catch (error) {
+        console.error(`[agent/researcher] sub-page fetch failed (${url}):`, error);
+        return null;
+      }
+    }),
+  );
+
+  const pages: PageText[] = [
+    { url: homepageUrl, text: homepageText.slice(0, HOMEPAGE_TEXT_CAP) },
+    ...subPages.filter((p): p is PageText => p !== null && p.text.length > 100),
+  ];
+  return { pages, visitedUrls: pages.map((p) => p.url) };
+}
+
+// --- Fallback: headless browser for JS-shell sites (still no LLM) -------------
+
+// Reads rendered text via page.evaluate — Stagehand here is ONLY a browser
+// driver; no model is attached and extract() is never called, so the session
+// completes in seconds regardless of model latency.
+async function collectViaBrowser(
   homepageUrl: string,
 ): Promise<CompanyResearchData | null> {
   const session = await createResearchSession();
@@ -178,16 +223,8 @@ async function collectCompanyResearch(
     env: "BROWSERBASE",
     apiKey: process.env.BROWSERBASE_API_KEY!,
     browserbaseSessionID: session.id,
-    model: {
-      modelName: STAGEHAND_MODEL,
-      apiKey: process.env.NIM_API_KEY!,
-      baseURL: "https://integrate.api.nvidia.com/v1",
-    },
-    systemPrompt: "/no_think", // nano-9b-v2: disable thinking inside Stagehand's calls
     verbose: 0,
     disablePino: true,
-    // Custom OpenAI-compatible endpoints (NIM) require local LLM execution —
-    // Stagehand's hosted API can't forward to a custom baseURL (404s).
     disableAPI: true,
   });
 
@@ -195,46 +232,61 @@ async function collectCompanyResearch(
     await stagehand.init();
     const page = stagehand.context.pages()[0];
 
-    await page.goto(homepageUrl);
-    const homepage = await stagehand.extract(
-      HOMEPAGE_INSTRUCTION,
-      homepageSchema,
+    const readPage = async (url: string): Promise<PageText> => {
+      await page.goto(url);
+      const text = await page.evaluate<string>(
+        "document.body ? document.body.innerText.replace(/\\s+/g, ' ').trim() : ''",
+      );
+      return { url, text };
+    };
+
+    const homepage = await readPage(homepageUrl);
+    if (homepage.text.length < MIN_HOMEPAGE_TEXT) return null;
+
+    const links = await page.evaluate<Array<{ url: string; label: string }>>(
+      "Array.from(document.querySelectorAll('a[href]')).slice(0, 200).map(a => ({ url: a.href, label: (a.textContent || '').toLowerCase().trim() }))",
     );
 
-    if (!homepage.oneLiner && !homepage.productSummary) return null;
-
-    const pages: CompanyResearchData["pages"] = [];
-    const visitedUrls = [homepageUrl];
-    for (const url of pickSubPages(homepage.pageLinks, homepageUrl)) {
-      // Per-page failures are logged and skipped — one broken page must not
-      // cost the rest of the research.
+    const pages: PageText[] = [
+      { url: homepageUrl, text: homepage.text.slice(0, HOMEPAGE_TEXT_CAP) },
+    ];
+    for (const url of pickSubPages(links, homepageUrl)) {
       try {
-        await page.goto(url);
-        const data = await stagehand.extract(SUB_PAGE_INSTRUCTION, subPageSchema);
-        pages.push({ url, ...data });
-        visitedUrls.push(url);
+        const p = await readPage(url);
+        if (p.text.length > 100) {
+          pages.push({ url, text: p.text.slice(0, SUB_PAGE_TEXT_CAP) });
+        }
       } catch (error) {
         console.error(`[agent/researcher] sub-page failed (${url}):`, error);
       }
     }
-
-    return {
-      homepage: {
-        oneLiner: homepage.oneLiner,
-        productSummary: homepage.productSummary,
-        signals: homepage.signals,
-      },
-      pages,
-      visitedUrls,
-    };
+    return { pages, visitedUrls: pages.map((p) => p.url) };
   } finally {
     await stagehand.close().catch(() => {});
   }
 }
 
-// --- NIM synthesis ------------------------------------------------------------
+// Fetch-first, browser fallback. Any failure → null (synthesis-only).
+async function collectCompanyResearch(
+  homepageUrl: string,
+): Promise<CompanyResearchData | null> {
+  try {
+    const viaFetch = await collectViaFetch(homepageUrl);
+    if (viaFetch) return viaFetch;
+  } catch (error) {
+    console.error("[agent/researcher] fetch path failed:", error);
+  }
+  console.log("[agent/researcher] thin/blocked homepage — trying browser fallback");
+  return collectViaBrowser(homepageUrl);
+}
 
-// Verbatim from build-plan §13.
+// --- NIM synthesis (the single model call in the pipeline) --------------------
+
+// Career-strategist prompt verbatim from build-plan §13, extended with (a) the
+// JSON shape and (b) an IDENTITY GUARD: the homepage is often a domain GUESS
+// (Adzuna redirects rarely reach the employer site), so the model must discard
+// research that clearly belongs to a different company — first live run
+// researched a furniture maker for a trading-systems job.
 const SYNTHESIS_SYSTEM_PROMPT = `You are a sharp career strategist preparing a candidate to apply for a specific role.
 You are given (a) research collected from the company's own website, (b) the job posting,
 and (c) the candidate's profile. Produce a concise, concrete briefing that gives this
@@ -244,6 +296,11 @@ Rules:
 - Ground every company claim in the provided research or job posting. Never invent
   funding, customers, headcount, or facts. If research was thin, infer carefully from
   the job posting and say what's inferred.
+- IDENTITY CHECK: the website research may have been collected from the WRONG company
+  (the URL is sometimes a guess from the company name). If the website content clearly
+  describes a different company than the job posting (different industry, products, or
+  business), set "usedWebsiteResearch" to false and ignore the website content entirely —
+  ground everything in the job posting alone. Otherwise set it to true.
 - Be specific to THIS candidate. Connect their actual skills and past work to this
   company's stack, product, and values. No generic advice that would apply to anyone.
 - Turn the candidate's missing skills into a strategy: how to frame the gap honestly
@@ -254,6 +311,7 @@ Rules:
 
 Return ONLY valid JSON matching this exact shape:
 {
+  "usedWebsiteResearch": boolean,
   "companyOverview": "string",
   "techStack": ["string"],
   "culture": ["string"],
@@ -270,14 +328,13 @@ function buildSynthesisPrompt(
   profile: Profile,
 ): string {
   const companyResearch = research
-    ? JSON.stringify(
-        { homepage: research.homepage, pages: research.pages },
-        null,
-        2,
-      )
+    ? research.pages
+        .map((p) => `PAGE: ${p.url}\n${p.text}`)
+        .join("\n\n---\n\n")
     : "No website research available — infer carefully from the job posting.";
 
-  return `COMPANY RESEARCH (from their website): ${companyResearch}
+  return `COMPANY RESEARCH (raw text from the company's website):
+${companyResearch}
 
 JOB POSTING:
 Title: ${job.title ?? "Not specified"}
@@ -316,20 +373,23 @@ async function synthesizeOnce(
   };
 
   const content = await streamNimContent(params);
-  const dossier = toDossier(JSON.parse(content) as Record<string, unknown>);
+  const parsed = parseNimJson(content) as Record<string, unknown>;
+  const dossier = toDossier(parsed);
   if (!dossier) throw new Error("Synthesis returned an empty dossier.");
 
-  // Sources are what we actually visited — never model output, so the dossier
-  // can't cite a URL the agent never opened.
-  dossier.sources = research?.visitedUrls ?? [];
+  // Sources are what we actually read — never model output. When the model's
+  // identity check rejected the website content (wrong company), cite nothing.
+  dossier.sources =
+    parsed.usedWebsiteResearch === false ? [] : (research?.visitedUrls ?? []);
   return dossier;
 }
 
 // --- Public entry --------------------------------------------------------------
 
-// Always produce a dossier: a browser/Browserbase failure degrades to
-// synthesis-only (job description + profile), never an error. Only a double
-// synthesis failure returns { success: false }.
+// Always produce a dossier: a fetch/browser failure degrades to synthesis-only
+// (job posting + profile), never an error. Only a double synthesis failure
+// returns { success: false } — and that leaves an agent_logs error row so the
+// failure is visible in the DB, not just the server console.
 export async function researchCompany(
   job: Job,
   profile: Profile,
@@ -338,14 +398,12 @@ export async function researchCompany(
   let research: CompanyResearchData | null = null;
   try {
     const homepageUrl = await deriveHomepageUrl(job.source_url, job.company);
-    // No derivable homepage → don't open a browser session at all; synthesize
-    // from the job posting + profile alone.
     if (homepageUrl) {
       research = await collectCompanyResearch(homepageUrl);
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error("[agent/researcher] browser research failed:", msg);
+    console.error("[agent/researcher] website research failed:", msg);
     void logAgent({
       runId: job.run_id,
       userId,
@@ -370,6 +428,13 @@ export async function researchCompany(
           ? secondError.message
           : String(secondError);
       console.error("[agent/researcher] synthesis attempt 2:", msg);
+      void logAgent({
+        runId: job.run_id,
+        userId,
+        jobId: job.id,
+        level: "error",
+        message: `Company research for ${job.company ?? "company"} failed — dossier could not be generated`,
+      });
       return {
         success: false,
         error: "Failed to build the company dossier. Please try again.",

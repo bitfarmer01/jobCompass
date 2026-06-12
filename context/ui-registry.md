@@ -325,7 +325,7 @@ Components. The page passes `applyUrl = external_apply_url ?? source_url` into J
 - `"use client"`; props `{ jobId, company, research: CompanyDossier | null }` — the server page passes `research={toDossier(job.company_research)}` (`lib/dossier.ts`)
 - Section `rounded-xl border border-border p-5`; header row `flex items-center justify-between gap-3`: `Building2 w-4 h-4 text-accent` + `h2 text-base font-semibold text-text-primary`; Research button only when no dossier: `<Button variant="default" size="sm">` — idle `Search` + "Research Company", busy `Loader2 animate-spin` + "Researching…" + disabled
 - Empty state: `flex flex-col items-center text-center gap-2 py-8`; icon disc `w-12 h-12 rounded-full bg-surface-secondary` + `Building2 w-5 h-5 text-text-muted`; title `text-sm font-medium text-text-primary`; sub `text-sm text-text-muted max-w-sm`
-- **Loading state** (long request, 1–3 min): same empty-state layout but `Loader2 w-5 h-5 text-accent animate-spin` in the disc, `role="status" aria-live="polite"`, copy warns "this can take a couple of minutes"
+- **Loading state** (~10–60s request): same empty-state layout but `Loader2 w-5 h-5 text-accent animate-spin` in the disc, `role="status" aria-live="polite"`, copy says "usually done in under a minute"
 - **Dossier sections** (`flex flex-col gap-5`, each section h3 `text-xs font-medium text-text-secondary uppercase tracking-wide mb-1.5`; empty sections skipped entirely):
   - `Paragraph` (Company Overview, Why This Role): body `text-sm leading-relaxed text-text-dark`
   - `TagList` (Tech Stack): pills `inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-accent-muted text-accent`
