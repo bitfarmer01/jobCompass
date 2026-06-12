@@ -1,5 +1,5 @@
-import { Briefcase, Calendar, DollarSign, MapPin } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Briefcase, Calendar, DollarSign, MapPin } from "@/components/icons";
+import type { LucideIcon } from "@/components/icons";
 
 import { formatRelativeTime } from "@/lib/utils";
 import type { Job } from "@/types";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { UploadCloud, FileText, Sparkles, ExternalLink, Download, Trash2 } from "lucide-react";
+import { UploadCloud, FileText, Sparkles, ExternalLink, Download, Trash2 } from "@/components/icons";
 
 import { Button } from "@/components/ui/button";
 import { uploadResume, deleteResume } from "@/actions/profile";

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Compass } from "lucide-react";
+import { Compass } from "@/components/icons";
 import { LogoutButton } from "@/components/layout/LogoutButton";
 
 const navLinks = [

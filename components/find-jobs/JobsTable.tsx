@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Building2, Briefcase } from "lucide-react";
+import { Building2, Briefcase } from "@/components/icons";
 
 export type JobSource = "search" | "url";
 

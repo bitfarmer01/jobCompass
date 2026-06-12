@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Compass } from "lucide-react";
+import { Compass } from "@/components/icons";
 import { insforge } from "@/lib/insforge-client";
 
 type Provider = "google" | "github";

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut } from "@/components/icons";
 
 import { Button } from "@/components/ui/button";
 import { posthog } from "@/lib/posthog-client";

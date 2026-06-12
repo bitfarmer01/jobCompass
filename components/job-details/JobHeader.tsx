@@ -1,4 +1,4 @@
-import { Building2, ExternalLink } from "lucide-react";
+import { Building2, ExternalLink } from "@/components/icons";
 
 import { Button } from "@/components/ui/button";
 import { scoreBadgeClass } from "@/lib/utils";

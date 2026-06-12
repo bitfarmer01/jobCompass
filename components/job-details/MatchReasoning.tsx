@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { Sparkles } from "@/components/icons";
 
 export function MatchReasoning({ reason }: { reason: string | null }) {
   return (
